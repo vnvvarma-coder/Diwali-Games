@@ -1133,7 +1133,7 @@
         /* ---------- PLAYER SIDE ---------- */
         function connectPlayer(onReady) {
             const pin = window.gamePinStr;
-            setPlayerStatus('Connecting to host…', 'Make sure the host screen is open.');
+            setPlayerStatus('Connecting to host...', 'Make sure the host screen is open.');
             playerPeer = new Peer();
             playerPeer.on('open', () => {
                 playerConn = playerPeer.connect(peerIdFor(pin), { reliable: true });
@@ -1142,7 +1142,7 @@
                 }, 12000);
                 playerConn.on('open', () => { clearTimeout(timeout); onReady && onReady(); });
                 playerConn.on('data', handlePlayerMessage);
-                playerConn.on('close', () => setPlayerStatus('Disconnected', 'Reconnecting…') || setTimeout(autoRejoin, 2000));
+                playerConn.on('close', () => setPlayerStatus('Disconnected', 'Reconnecting...') || setTimeout(autoRejoin, 2000));
             });
             playerPeer.on('error', e => {
                 console.warn(e);
