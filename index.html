@@ -1,77 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diwali Multi-Game Hub</title>
+    <title>Diwali Festival Multi-Game Cloud Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
-    <!-- QRCode.js for generating QR codes -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- Canvas Confetti for celebrations -->
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <!-- PeerJS for Multiplayer -->
-    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
-    
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            overflow-x: hidden;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
         
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-
-        .diwali-bg {
-            background: radial-gradient(circle at 50% 0%, #451a03 0%, #0f172a 70%);
-        }
-        .shimmer-text {
-            background: linear-gradient(to right, #fbbf24, #f59e0b, #fbbf24);
-            background-size: 200% auto;
-            color: transparent;
-            -webkit-background-clip: text;
-            background-clip: text;
-            animation: shimmer 3s linear infinite;
-        }
-        @keyframes shimmer { to { background-position: 200% center; } }
-        
-        .pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
-
-        #timerBar { transition: width 1s linear, background-color 0.3s; }
-
-        .q-image {
-            max-height: 250px;
-            object-fit: cover;
-            border-radius: 1rem;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-            border: 2px solid #334155;
-        }
-
-        .answer-btn { transition: all 0.2s ease-in-out; }
-        .answer-btn:active { transform: scale(0.98); }
-
-        /* JEOPARDY STYLES */
-        .j-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; }
         .j-card {
             background: linear-gradient(135deg, #1e3a8a, #172554);
             border: 2px solid #3b82f6;
-            color: #fbbf24;
-            font-weight: 900;
-            font-size: 1.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            transition: all 0.2s;
-            cursor: pointer;
-            box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
         }
-        .j-card:hover:not(.played) { background: linear-gradient(135deg, #2563eb, #1d4ed8); transform: scale(1.02); box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .j-card:hover:not(.played) {
+            transform: scale(1.03);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+            border-color: #60a5fa;
+            cursor: pointer;
+        }
         .j-card.played { opacity: 0.3; cursor: not-allowed; text-decoration: line-through; }
         .j-header { font-size: 0.8rem; text-align: center; font-weight: bold; text-transform: uppercase; padding: 0.5rem; background: rgba(15, 23, 42, 0.8); }
-
+        
         /* FEUD STYLES */
         .feud-board {
             background: linear-gradient(135deg, #1e3a8a, #0f172a);
@@ -101,610 +52,699 @@
         .strike-anim { animation: strike-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col diwali-bg relative">
+<body class="h-full bg-slate-950 text-slate-100 flex flex-col overflow-x-hidden">
 
-    <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden" id="diyaContainer"></div>
-
-    <!-- HOST LOGIN OVERLAY -->
-    <div id="viewHostLogin" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950">
-        <div class="bg-slate-900 border border-slate-700 p-8 md:p-12 rounded-3xl shadow-2xl max-w-md w-full text-center relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-400 to-orange-500"></div>
-            <div class="text-6xl mb-6">🪔</div>
-            <h2 class="text-3xl font-black text-white mb-2">Host Access</h2>
-            <p class="text-slate-400 text-sm mb-8">Please log in to control the game.</p>
-            
-            <input type="text" id="hostId" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white mb-4 focus:outline-none focus:border-amber-500" placeholder="Host ID" value="host">
-            <input type="password" id="hostPass" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white mb-6 focus:outline-none focus:border-amber-500" placeholder="Password" value="Belmont@2026">
-            
-            <p id="loginError" class="text-red-400 text-sm font-bold mb-4 hidden">Invalid Credentials!</p>
-            
-            <button onclick="attemptHostLogin()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-4 rounded-xl shadow-lg transition">LOGIN TO DASHBOARD</button>
-        </div>
-    </div>
-
-    <!-- PLAYER UI: JOIN SCREEN -->
-    <div id="viewPlayerJoin" class="fixed inset-0 z-[150] hidden flex flex-col items-center justify-center bg-slate-950 p-6">
-        <div class="max-w-sm w-full text-center">
-            <div class="text-5xl mb-4">📱</div>
-            <h2 class="text-3xl font-black text-white mb-2">Join Game</h2>
-            <p class="text-amber-400 font-bold tracking-widest mb-8">PIN: <span id="playerDisplayPin"></span></p>
-            
-            <input type="text" id="playerNameInput" class="w-full bg-slate-800 border-2 border-slate-600 rounded-xl px-4 py-4 text-white text-xl font-bold text-center mb-6 focus:outline-none focus:border-blue-500" placeholder="Enter Team Name" maxlength="15">
-            
-            <button onclick="playerSubmitJoin()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black text-xl py-4 rounded-xl shadow-lg transition transform active:scale-95">JOIN NOW</button>
-        </div>
-    </div>
-
-    <!-- PLAYER UI: WAITING SCREEN -->
-    <div id="viewPlayerWaiting" class="fixed inset-0 z-[150] hidden flex flex-col items-center justify-center bg-slate-950 p-6">
-        <div class="text-center">
-            <div id="playerSpinner" class="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
-            <h2 class="text-2xl font-black text-white mb-2" id="playerStatusTitle">You're In!</h2>
-            <p class="text-slate-400 text-lg mb-6" id="playerStatusSubtitle">Look at the big screen.<br>Waiting for host to start...</p>
-            <div class="px-6 py-2 bg-slate-800 rounded-full inline-block mb-6">
-                <span class="text-sm font-bold text-slate-300" id="playerJoinedNameDisplay">Team Name</span>
-            </div>
+    <!-- HEADER / NAVBAR -->
+    <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-4 flex justify-between items-center z-40">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="checkHostAuthOrLanding()">
+            <span class="text-3xl">🪔</span>
             <div>
-                <button onclick="playerLeaveGame()" class="text-xs text-red-400 hover:text-red-300 underline font-semibold">Leave Game / Change Name</button>
+                <h1 class="font-black text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">DEEPAWALI CLASH</h1>
+                <p class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold" id="headerSubtitle">Cloud Multiplayer Hub</p>
             </div>
         </div>
-    </div>
-
-    <!-- PLAYER UI: KAHOOT ANSWER SCREEN -->
-    <div id="viewPlayerKahootControls" class="fixed inset-0 z-[150] hidden flex flex-col bg-slate-950 p-4">
-        <div class="text-center py-4">
-            <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">Select Your Answer</p>
-        </div>
-        <div class="grid grid-cols-2 gap-4 flex-1 mb-8" id="playerAnswerGrid">
-            <button onclick="playerSubmitAnswer(0)" class="bg-red-600 active:bg-red-700 text-white font-black text-6xl rounded-2xl shadow-lg transition transform active:scale-95 flex items-center justify-center">▲</button>
-            <button onclick="playerSubmitAnswer(1)" class="bg-blue-600 active:bg-blue-700 text-white font-black text-6xl rounded-2xl shadow-lg transition transform active:scale-95 flex items-center justify-center">◆</button>
-            <button onclick="playerSubmitAnswer(2)" class="bg-amber-500 active:bg-amber-600 text-white font-black text-6xl rounded-2xl shadow-lg transition transform active:scale-95 flex items-center justify-center">●</button>
-            <button onclick="playerSubmitAnswer(3)" class="bg-emerald-600 active:bg-emerald-700 text-white font-black text-6xl rounded-2xl shadow-lg transition transform active:scale-95 flex items-center justify-center">■</button>
-        </div>
-    </div>
-
-    <!-- Header -->
-    <header class="p-4 md:p-6 z-10 flex justify-between items-center bg-slate-900/50 backdrop-blur-md border-b border-slate-800">
-        <div class="flex items-center space-x-3 cursor-pointer" onclick="goToLanding()">
-            <div class="text-3xl">🪔</div>
-            <div>
-                <h1 class="text-2xl font-black tracking-tight text-white leading-none">FESTIVAL <span class="shimmer-text">CLASH</span></h1>
-                <p class="text-xs text-amber-500 font-semibold tracking-widest uppercase mt-1" id="headerSubtitle">Multi-Game Experience</p>
-            </div>
-        </div>
-        
         <div id="gameStatusIndicator" class="hidden items-center space-x-4">
-            <div class="text-right">
-                <p class="text-xs text-slate-400 uppercase tracking-widest">Question</p>
-                <p class="text-xl font-bold text-white"><span id="currentQNum">1</span><span class="text-slate-500 text-sm">/20</span></p>
-            </div>
+            <span class="px-3 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-400 text-xs font-bold rounded-full animate-pulse" id="liveStatusBadge">CLOUD LIVE</span>
+            <button onclick="endGame()" class="text-xs bg-red-950 hover:bg-red-900 text-red-300 font-bold px-3 py-1.5 rounded-lg border border-red-800 transition">End Game</button>
         </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 relative z-10 flex flex-col items-center w-full">
+    <!-- HOST LOGIN SCREEN -->
+    <section id="viewHostLogin" class="flex-1 flex flex-col items-center justify-center p-6 max-w-md mx-auto w-full text-center">
+        <div class="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl w-full relative overflow-hidden">
+            <div class="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl"></div>
+            <h2 class="text-2xl font-black text-white mb-2">Host Portal Login</h2>
+            <p class="text-xs text-slate-400 mb-6">Enter host credentials to manage games and display the main screen.</p>
+            
+            <div class="space-y-4 text-left">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Username</label>
+                    <input type="text" id="hostUserInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition" placeholder="host">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Password</label>
+                    <input type="password" id="hostPassInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition" placeholder="••••••••••••">
+                </div>
+                <div id="loginErrorMsg" class="text-xs text-red-400 font-semibold hidden"></div>
+                <button onclick="attemptHostLogin()" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 text-white font-black py-3.5 rounded-xl shadow-lg transition">LOGIN AS HOST</button>
+            </div>
+        </div>
+    </section>
 
-        <!-- VIEW 0: LANDING PAGE -->
+    <!-- PLAYER VIEW (IF URL HAS PIN) -->
+    <div id="playerPortalView" class="hidden flex-1 flex flex-col items-center justify-center p-4 w-full">
+        <!-- Join Screen -->
+        <div id="viewPlayerJoin" class="max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl text-center">
+            <span class="text-5xl mb-4 inline-block">📱</span>
+            <h2 class="text-2xl font-black text-white mb-2">Join Diwali Game</h2>
+            <p class="text-xs text-slate-400 mb-6">Enter your Team Name to join the cloud lobby!</p>
+            <div class="space-y-4 text-left">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Team Name</label>
+                    <input type="text" id="playerNameInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition" placeholder="e.g. Royal Rangolis">
+                </div>
+                <button onclick="playerJoinGame()" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 text-white font-black py-3.5 rounded-xl shadow-lg transition">JOIN NOW</button>
+            </div>
+        </div>
+
+        <!-- Waiting Room Screen -->
+        <div id="viewPlayerWaiting" class="hidden max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl text-center">
+            <div class="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+            <h2 class="text-2xl font-black text-white mb-2" id="playerStatusTitle">You're In!</h2>
+            <p class="text-sm text-slate-400 mb-8" id="playerStatusSubtitle">Waiting for the host to start the game...</p>
+            <button onclick="playerLeaveGame()" class="text-xs text-red-400 hover:text-red-300 underline font-semibold">Leave Team / Logout</button>
+        </div>
+
+        <!-- Kahoot Answer Buttons Screen -->
+        <div id="viewPlayerKahootControls" class="hidden max-w-md w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl text-center">
+            <div class="flex justify-between items-center mb-6 border-b border-slate-800 pb-3">
+                <span id="playerActiveTeamBadge" class="text-xs font-bold bg-amber-500/20 text-amber-400 px-3 py-1 rounded-full">Team</span>
+                <span class="text-xs text-slate-400">Tap your answer below</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="playerSubmitAnswer(0)" class="h-32 bg-red-600 hover:bg-red-500 active:scale-95 rounded-2xl flex flex-col items-center justify-center text-white font-black text-2xl shadow-lg transition">▲<span class="text-xs font-semibold mt-1 opacity-90">Option A</span></button>
+                <button onclick="playerSubmitAnswer(1)" class="h-32 bg-blue-600 hover:bg-blue-500 active:scale-95 rounded-2xl flex flex-col items-center justify-center text-white font-black text-2xl shadow-lg transition">◆<span class="text-xs font-semibold mt-1 opacity-90">Option B</span></button>
+                <button onclick="playerSubmitAnswer(2)" class="h-32 bg-amber-500 hover:bg-amber-400 active:scale-95 rounded-2xl flex flex-col items-center justify-center text-white font-black text-2xl shadow-lg transition">●<span class="text-xs font-semibold mt-1 opacity-90">Option C</span></button>
+                <button onclick="playerSubmitAnswer(3)" class="h-32 bg-emerald-600 hover:bg-emerald-500 active:scale-95 rounded-2xl flex flex-col items-center justify-center text-white font-black text-2xl shadow-lg transition">■<span class="text-xs font-semibold mt-1 opacity-90">Option D</span></button>
+            </div>
+            <div class="mt-6">
+                <button onclick="playerLeaveGame()" class="text-xs text-red-400 hover:text-red-300 underline">Leave Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN HOST CONTAINER -->
+    <main id="hostPortalView" class="hidden flex-1 flex flex-col relative overflow-y-auto">
+
+        <!-- VIEW 0: LANDING PAGE (GAME SELECTOR) -->
         <section id="viewLanding" class="flex-1 flex flex-col items-center justify-center p-6 max-w-6xl mx-auto w-full text-center">
             <h2 class="text-4xl md:text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-rose-500">Choose Your Game Mode</h2>
-            <p class="text-slate-400 max-w-xl mx-auto text-sm md:text-base mb-12">Select between Kahoot Clash, Diwali Jeopardy, or Festival Feud!</p>
+            <p class="text-slate-400 max-w-xl mx-auto text-sm md:text-base mb-12">Select between the fast-paced Kahoot style, the strategic Jeopardy board, or the classic Family Feud for your Diwali party!</p>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
-                <div onclick="selectGameMode('kahoot')" class="bg-slate-900/90 border border-slate-700 hover:border-amber-500 p-6 md:p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-amber-500/20 flex flex-col items-center text-center">
-                    <div class="text-5xl md:text-6xl mb-4 md:mb-6 group-hover:scale-110 transition duration-300">📱</div>
-                    <h3 class="text-xl md:text-2xl font-bold text-white mb-2">Kahoot Clash</h3>
-                    <p class="text-slate-400 text-xs md:text-sm">Fast-paced trivia. Join with QR codes and answer on phones!</p>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-6xl">
+                <div onclick="selectGameMode('kahoot')" class="bg-slate-900/90 border border-slate-700 hover:border-amber-500 p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-amber-500/20 relative overflow-hidden flex flex-col items-center text-center">
+                    <div class="text-6xl mb-6 group-hover:scale-110 transition duration-300">📱</div>
+                    <h3 class="text-2xl font-bold text-white mb-2">Kahoot Clash</h3>
+                    <p class="text-slate-400 text-sm">Multiple choice, fast-paced trivia. Players join via QR code with their mobile phones!</p>
                 </div>
-                <div onclick="selectGameMode('jeopardy')" class="bg-slate-900/90 border border-slate-700 hover:border-blue-500 p-6 md:p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-blue-500/20 flex flex-col items-center text-center">
-                    <div class="text-5xl md:text-6xl mb-4 md:mb-6 group-hover:scale-110 transition duration-300">📺</div>
-                    <h3 class="text-xl md:text-2xl font-bold text-white mb-2">Diwali Jeopardy</h3>
-                    <p class="text-slate-400 text-xs md:text-sm">Classic grid-based board. Pick categories and risk points!</p>
+                <div onclick="selectGameMode('jeopardy')" class="bg-slate-900/90 border border-slate-700 hover:border-blue-500 p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-blue-500/20 relative overflow-hidden flex flex-col items-center text-center">
+                    <div class="text-6xl mb-6 group-hover:scale-110 transition duration-300">📺</div>
+                    <h3 class="text-2xl font-bold text-white mb-2">Diwali Jeopardy</h3>
+                    <p class="text-slate-400 text-sm">Classic grid-based board. Pick categories, risk points, and let the host award points!</p>
                 </div>
-                <div onclick="selectGameMode('feud')" class="bg-slate-900/90 border border-slate-700 hover:border-red-500 p-6 md:p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-red-500/20 flex flex-col items-center text-center">
-                    <div class="text-5xl md:text-6xl mb-4 md:mb-6 group-hover:scale-110 transition duration-300">👨‍👩‍👧‍👦</div>
-                    <h3 class="text-xl md:text-2xl font-bold text-white mb-2">Festival Feud</h3>
-                    <p class="text-slate-400 text-xs md:text-sm">Survey says! Guess popular answers and avoid strikes!</p>
+                <div onclick="selectGameMode('feud')" class="bg-slate-900/90 border border-slate-700 hover:border-red-500 p-8 rounded-3xl shadow-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-2 hover:shadow-red-500/20 relative overflow-hidden flex flex-col items-center text-center">
+                    <div class="text-6xl mb-6 group-hover:scale-110 transition duration-300">👨‍👩‍👧‍👦</div>
+                    <h3 class="text-2xl font-bold text-white mb-2">Festival Feud</h3>
+                    <p class="text-slate-400 text-sm">Survey says! Guess popular answers, avoid strikes, and steal the round bank points!</p>
                 </div>
             </div>
         </section>
 
-        <!-- VIEW 1: LOBBY -->
-        <section id="viewLobby" class="hidden flex-1 flex flex-col items-center justify-center p-6 max-w-6xl mx-auto w-full">
-            <div id="lobbyModeBadge" class=""></div>
-            <h2 class="text-3xl md:text-5xl font-black mb-8 text-center" id="lobbyTitle">Game Setup</h2>
-            
+        <!-- VIEW 1: LOBBY & TEAM SETUP / QR CODE -->
+        <section id="viewLobby" class="hidden flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full items-center justify-center">
+            <div class="w-full text-center mb-8">
+                <div id="lobbyModeBadge" class="px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-widest inline-block mb-3">Kahoot Edition</div>
+                <h2 class="text-3xl md:text-5xl font-black text-white" id="lobbyTitle">Ready for Kahoot?</h2>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
-                <div id="qrCodePanel" class="lg:col-span-5 bg-slate-900/90 border border-slate-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden">
-                    <h3 class="text-2xl font-bold mb-2 text-white">Join the Game!</h3>
-                    <p class="text-slate-400 text-sm mb-2">Scan with any smartphone camera</p>
-                    <p class="text-xs text-amber-400/80 mb-4 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">💡 Make sure hosted online (e.g. GitHub Pages / Netlify)</p>
-                    <div class="bg-white p-4 rounded-2xl shadow-lg mb-6 cursor-pointer hover:scale-105 transition" id="qrcode" onclick="openJoinSimulation()"></div>
-                    <div class="text-3xl font-black tracking-[0.2em] text-amber-500 mb-2">PIN: <span id="gamePin"></span></div>
-                    <button onclick="openJoinSimulation()" class="mt-4 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-full transition border border-slate-600">Simulate Team Join</button>
+                <!-- QR Code & PIN Panel (Kahoot Only) -->
+                <div id="qrCodePanel" class="lg:col-span-5 bg-slate-900/90 border border-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col items-center text-center">
+                    <h3 class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Game PIN</h3>
+                    <div class="text-4xl md:text-5xl font-black text-amber-400 font-mono tracking-widest mb-6" id="gamePin">849201</div>
+                    <div class="bg-white p-4 rounded-2xl shadow-inner mb-6" id="qrcodeContainer">
+                        <!-- QR Code Canvas / SVG -->
+                    </div>
+                    <p class="text-xs text-slate-400 mb-4">Scan QR code with your phone camera or open player link to join instantly as a team!</p>
+                    <button onclick="openPlayerTab()" class="text-xs text-amber-400 hover:text-amber-300 underline font-semibold">Open Player Join Tab ➔</button>
                 </div>
 
+                <!-- Teams Manager Panel -->
                 <div id="teamsPanel" class="lg:col-span-7 bg-slate-900/90 border border-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col justify-between">
                     <div>
-                        <h3 class="text-xl font-bold text-white mb-4 flex items-center justify-between">
-                            <span>Participating Teams</span>
-                            <div class="flex items-center space-x-2">
-                                <label for="teamCountSelect" class="text-xs text-slate-400 font-normal">Team Count:</label>
-                                <select id="teamCountSelect" onchange="changeTeamCount(this.value)" class="bg-slate-800 text-white rounded-lg px-2 py-1.5 border border-slate-600 outline-none text-sm cursor-pointer hover:bg-slate-700 transition">
-                                </select>
-                            </div>
-                        </h3>
-                        <div class="space-y-3 max-h-[40vh] overflow-y-auto pr-2" id="teamList"></div>
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-bold text-white">Joined Teams (<span id="teamCountIndicator">0</span>)</h3>
+                        </div>
+
+                        <div class="space-y-3 max-h-72 overflow-y-auto pr-2" id="teamList">
+                            <!-- Populated dynamically -->
+                        </div>
                     </div>
-                    
-                    <div class="mt-8 pt-6 border-t border-slate-800 flex justify-center">
-                        <button onclick="startGame()" class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 text-white font-black text-lg py-4 px-12 rounded-full shadow-lg transition transform hover:scale-105 w-full md:w-auto" id="startGameBtnText">
-                            START GAME
-                        </button>
+
+                    <div class="mt-8 pt-6 border-t border-slate-800 flex flex-wrap justify-between items-center gap-4" id="lobbyStartContainer">
+                        <button onclick="restartKahootGame()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm py-3 px-6 rounded-full border border-slate-600 transition">🔄 New Game / Reset PIN</button>
+                        <button onclick="startGame()" class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 text-white font-black text-lg py-4 px-12 rounded-full shadow-lg transition transform hover:scale-105" id="startGameBtnText">START GAME</button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- VIEW 2: KAHOOT QUESTION -->
-        <section id="viewQuestion" class="hidden flex-1 flex flex-col p-4 md:p-8 max-w-5xl mx-auto w-full">
-            <div class="text-center mb-6">
-                <h2 id="qText" class="text-2xl md:text-4xl font-black text-white leading-tight mb-6">Question Text</h2>
-                <img id="qImage" src="" alt="Question Image" class="q-image mx-auto hidden" onerror="this.style.display='none'">
+        <!-- KAHOOT VIEW 2: QUESTION SCREEN -->
+        <section id="viewQuestion" class="hidden flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full justify-between">
+            <div class="flex justify-between items-center bg-slate-900/80 border border-slate-800 px-6 py-4 rounded-2xl">
+                <span class="text-xs font-bold text-amber-400 uppercase tracking-widest" id="qCategoryTracker">History & Mythology</span>
+                <div class="flex items-center space-x-3">
+                    <span class="text-xs text-slate-400 font-bold">Time Left:</span>
+                    <span class="text-xl font-black text-white font-mono bg-slate-950 px-4 py-1 rounded-xl border border-slate-800" id="timerDisplay">30</span>
+                </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-auto mb-8 flex-1 content-end" id="answerGrid"></div>
+            <!-- Question & Image Banner -->
+            <div class="my-6 text-center">
+                <h2 class="text-2xl md:text-4xl font-extrabold text-white mb-6 leading-tight max-w-4xl mx-auto" id="questionText">Question goes here?</h2>
+                <div id="questionImageContainer" class="hidden max-w-lg mx-auto mb-6 rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl">
+                    <img id="questionImage" src="" alt="Question Image" class="w-full h-48 md:h-64 object-cover">
+                </div>
+            </div>
 
-            <div class="w-full bg-slate-800 rounded-full h-4 md:h-6 mb-2 border border-slate-700 overflow-hidden relative">
-                <div class="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-300 z-10" id="timerText">30s</div>
-                <div id="timerBar" class="bg-gradient-to-r from-emerald-400 to-red-500 h-full rounded-full w-full relative z-0"></div>
+            <!-- 4 Options Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="bg-red-600 border-2 border-red-500 p-6 rounded-2xl flex items-center shadow-lg" id="optCard0">
+                    <span class="text-3xl font-black mr-4 bg-red-950/40 w-12 h-12 rounded-xl flex items-center justify-center">▲</span>
+                    <span class="text-lg md:text-xl font-bold text-white" id="optionText0">Option A</span>
+                </div>
+                <div class="bg-blue-600 border-2 border-blue-500 p-6 rounded-2xl flex items-center shadow-lg" id="optCard1">
+                    <span class="text-3xl font-black mr-4 bg-blue-950/40 w-12 h-12 rounded-xl flex items-center justify-center">◆</span>
+                    <span class="text-lg md:text-xl font-bold text-white" id="optionText1">Option B</span>
+                </div>
+                <div class="bg-amber-600 border-2 border-amber-500 p-6 rounded-2xl flex items-center shadow-lg" id="optCard2">
+                    <span class="text-3xl font-black mr-4 bg-amber-950/40 w-12 h-12 rounded-xl flex items-center justify-center">●</span>
+                    <span class="text-lg md:text-xl font-bold text-white" id="optionText2">Option C</span>
+                </div>
+                <div class="bg-emerald-600 border-2 border-emerald-500 p-6 rounded-2xl flex items-center shadow-lg" id="optCard3">
+                    <span class="text-3xl font-black mr-4 bg-emerald-950/40 w-12 h-12 rounded-xl flex items-center justify-center">■</span>
+                    <span class="text-lg md:text-xl font-bold text-white" id="optionText3">Option D</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- KAHOOT VIEW 3: FEEDBACK / LEADERBOARD -->
+        <section id="viewFeedback" class="hidden flex-1 flex flex-col p-6 max-w-4xl mx-auto w-full items-center justify-center text-center">
+            <h2 class="text-3xl md:text-5xl font-black text-amber-400 mb-2">Round Scoreboard</h2>
+            <p class="text-sm text-slate-400 mb-8">Review team points before proceeding to the next question.</p>
+            
+            <div class="w-full space-y-3 mb-10" id="feedbackScoreList">
+                <!-- Populated dynamically -->
+            </div>
+
+            <button onclick="nextQuestion()" class="bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black py-4 px-12 rounded-full shadow-lg hover:scale-105 transition">NEXT QUESTION ➔</button>
+        </section>
+
+        <!-- JEOPARDY VIEW 1: BOARD -->
+        <section id="viewJeopardyBoard" class="hidden flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-black text-blue-400 tracking-wider">DIWALI JEOPARDY BOARD</h2>
+                <div class="flex space-x-6" id="jeopardyTeamScoresHeader">
+                    <!-- Team scoreboard chips -->
+                </div>
             </div>
             
-            <div class="flex justify-between items-center mt-6">
-                <button onclick="endGame()" class="text-slate-500 hover:text-slate-300 text-sm font-semibold">End Game</button>
-                <button onclick="skipToFeedback()" class="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2 rounded-full text-sm font-bold border border-slate-600">Skip / Time Up</button>
+            <div class="flex-1 grid grid-cols-5 gap-3" id="jeopardyGridContainer">
+                <!-- Populated dynamically -->
             </div>
         </section>
 
-        <!-- VIEW 3: FEEDBACK -->
-        <section id="viewFeedback" class="hidden flex-1 flex flex-col items-center justify-center p-6 w-full absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-md">
-            <div class="max-w-2xl w-full text-center">
-                <div class="text-7xl mb-4 animate-bounce">✅</div>
-                <h2 class="text-4xl md:text-5xl font-black mb-2">Round Over!</h2>
-                
-                <div class="bg-slate-800 border border-slate-700 p-6 md:p-8 rounded-3xl mt-8 shadow-2xl">
-                    <p class="text-slate-400 uppercase tracking-widest text-sm font-bold mb-2">Correct Answer</p>
-                    <p id="correctAnswerText" class="text-2xl md:text-3xl font-bold text-emerald-400 mb-6">Answer</p>
-                    
-                    <div class="border-t border-slate-700 pt-6 mt-2">
-                        <p class="text-slate-400 uppercase tracking-widest text-sm font-bold mb-4">Current Standings</p>
-                        <div class="grid grid-cols-3 sm:grid-cols-5 gap-3" id="miniScoreboard"></div>
-                    </div>
-                </div>
-                
-                <button onclick="nextQuestion()" class="mt-10 bg-blue-600 hover:bg-blue-500 text-white font-black text-lg py-4 px-12 rounded-full shadow-lg transition transform hover:scale-105">
-                    NEXT QUESTION ➔
-                </button>
-            </div>
-        </section>
-
-        <!-- VIEW 4: PODIUM -->
-        <section id="viewPodium" class="hidden flex-1 flex flex-col items-center justify-end pb-12 p-6 w-full relative h-full">
-            <h2 class="text-4xl md:text-6xl font-black text-amber-400 mb-4 absolute top-12 text-center w-full z-20">CHAMPIONS</h2>
-            <div class="flex items-end justify-center space-x-2 md:space-x-6 h-64 md:h-96 w-full max-w-3xl z-10 mt-32" id="podiumContainer">
-                <div class="flex flex-col items-center w-1/3 opacity-0 translate-y-10" id="podium2">
-                    <div class="text-xl font-black text-slate-300 mb-2 truncate w-full text-center" id="p2Name">Team</div>
-                    <div class="text-sm text-slate-400 font-bold mb-2" id="p2Score">0 pts</div>
-                    <div class="w-full bg-slate-700 h-3/4 rounded-t-lg flex justify-center pt-4"></div>
-                </div>
-                <div class="flex flex-col items-center w-1/3 opacity-0 translate-y-10 z-10" id="podium1">
-                    <div class="text-4xl mb-2">👑</div>
-                    <div class="text-2xl md:text-3xl font-black text-amber-400 mb-2 truncate w-full text-center" id="p1Name">Team</div>
-                    <div class="text-base text-slate-300 font-bold mb-2" id="p1Score">0 pts</div>
-                    <div class="w-full bg-amber-500 h-full rounded-t-lg flex justify-center pt-4"></div>
-                </div>
-                <div class="flex flex-col items-center w-1/3 opacity-0 translate-y-10" id="podium3">
-                    <div class="text-lg font-black text-orange-400 mb-2 truncate w-full text-center" id="p3Name">Team</div>
-                    <div class="text-sm text-slate-400 font-bold mb-2" id="p3Score">0 pts</div>
-                    <div class="w-full bg-orange-700 h-1/2 rounded-t-lg flex justify-center pt-4"></div>
-                </div>
-            </div>
-            <div class="mt-12 z-20">
-                <button onclick="goToLanding()" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-full border border-slate-600">Back to Main Menu</button>
-            </div>
-        </section>
-
-        <!-- VIEW 5: JEOPARDY -->
-        <section id="viewJeopardyBoard" class="hidden flex-1 flex flex-col p-4 md:p-6 max-w-6xl mx-auto w-full h-full relative">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-black text-blue-400">DIWALI JEOPARDY</h2>
-                <button onclick="endGame()" class="px-4 py-2 bg-slate-800 border border-slate-700 text-xs font-bold rounded-xl text-slate-300">End Game</button>
-            </div>
-            <div class="grid grid-cols-5 gap-2 mb-2 w-full" id="jCategories"></div>
-            <div class="j-grid w-full flex-1 min-h-[400px]" id="jBoard"></div>
-            <div class="w-full bg-slate-900 border border-slate-800 p-4 rounded-2xl mt-4">
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3" id="jTeamScores"></div>
-            </div>
-        </section>
-
-        <!-- VIEW 6: JEOPARDY Q -->
-        <section id="viewJeopardyQuestion" class="hidden flex-1 flex flex-col items-center justify-center p-6 w-full absolute inset-0 z-50 bg-blue-950/95">
-            <div class="max-w-4xl w-full text-center flex flex-col h-full py-12">
-                <p class="text-blue-400 font-bold uppercase mb-2" id="jActiveCategory"></p>
-                <div class="bg-blue-900/40 border border-blue-500/50 p-8 md:p-12 rounded-[2rem] my-auto">
-                    <h2 id="jActiveQuestionText" class="text-3xl md:text-5xl font-black text-white"></h2>
-                </div>
-                <button onclick="showJeopardyAnswer()" class="bg-amber-600 hover:bg-amber-500 text-white font-black text-lg py-4 px-12 rounded-full mx-auto">REVEAL ANSWER</button>
-            </div>
-        </section>
-
-        <!-- VIEW 7: JEOPARDY A -->
-        <section id="viewJeopardyAnswer" class="hidden flex-1 flex flex-col items-center justify-center p-6 w-full absolute inset-0 z-50 bg-blue-950/95">
+        <!-- JEOPARDY VIEW 2: QUESTION POPUP -->
+        <section id="viewJeopardyQuestion" class="hidden flex-1 flex flex-col items-center justify-center p-6 w-full absolute inset-0 z-50 bg-slate-950/95 backdrop-blur-md">
             <div class="max-w-4xl w-full text-center">
-                <h3 class="text-emerald-400 font-bold uppercase mb-4 text-xl">Correct Answer</h3>
-                <div class="bg-emerald-900/40 border border-emerald-500/50 p-8 rounded-[2rem] mb-12">
-                    <h2 id="jActiveAnswerText" class="text-3xl md:text-5xl font-black text-white"></h2>
+                <span class="text-amber-400 font-bold uppercase tracking-widest text-sm mb-2 block" id="jActiveCategoryValue">Category • 300 pts</span>
+                <div class="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2rem] shadow-2xl mb-8">
+                    <h2 id="jActiveQuestionText" class="text-2xl md:text-4xl font-extrabold text-white leading-relaxed">
+                        Question text goes here
+                    </h2>
                 </div>
-                <div class="flex flex-wrap justify-center gap-3 mb-8" id="jAwardButtons"></div>
-                <button onclick="closeJeopardyTile(null)" class="text-sm font-semibold text-slate-400 underline">Skip</button>
+                <button onclick="revealJeopardyAnswer()" class="bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black py-4 px-12 rounded-2xl shadow-xl hover:scale-105 transition text-lg">REVEAL ANSWER</button>
             </div>
         </section>
 
-        <!-- VIEW 8: FEUD -->
+        <!-- JEOPARDY VIEW 3: ANSWER & AWARD POINTS -->
+        <section id="viewJeopardyAnswer" class="hidden flex-1 flex flex-col items-center justify-center p-6 w-full absolute inset-0 z-50 bg-blue-950/95 backdrop-blur-md">
+            <div class="max-w-4xl w-full text-center">
+                <h3 class="text-emerald-400 font-bold tracking-widest uppercase mb-4 text-xl">Correct Answer</h3>
+                <div class="bg-emerald-900/40 border border-emerald-500/50 p-8 md:p-12 rounded-[2rem] shadow-2xl mb-12">
+                    <h2 id="jActiveAnswerText" class="text-3xl md:text-5xl font-black text-white leading-tight drop-shadow-lg">
+                        Answer goes here
+                    </h2>
+                </div>
+                
+                <h4 class="text-slate-300 mb-4 font-semibold uppercase tracking-wider text-sm">Award points to:</h4>
+                <div class="flex flex-wrap justify-center gap-3 mb-8" id="jAwardButtons">
+                    <!-- Populated dynamically -->
+                </div>
+                <button onclick="closeJeopardyTile(null)" class="text-sm font-semibold text-slate-400 hover:text-white underline transition">Nobody got it right (Skip)</button>
+            </div>
+        </section>
+
+        <!-- FAMILY FEUD VIEW -->
         <section id="viewFeudBoard" class="hidden flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full relative">
             <div class="flex justify-between items-center mb-6">
                 <div>
-                    <h2 class="text-3xl font-black text-red-500">FESTIVAL FEUD</h2>
-                    <p class="text-sm text-slate-400 font-semibold" id="feudQuestionTracker">Round 1</p>
+                    <h2 class="text-3xl font-black text-red-500 tracking-wider drop-shadow-md">FESTIVAL FEUD</h2>
+                    <p class="text-sm text-slate-400 font-semibold uppercase tracking-wider" id="feudQuestionTracker">Round 1</p>
                 </div>
                 <div class="flex space-x-4">
-                    <button onclick="triggerFeudStrike()" class="px-5 py-2 bg-red-900 border border-red-500 text-red-400 font-black rounded-xl">❌ STRIKE</button>
-                    <button onclick="endGame()" class="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl">End Game</button>
+                    <button onclick="triggerFeudStrike()" class="px-5 py-2 bg-red-900/50 border border-red-500 text-red-400 font-black rounded-xl hover:bg-red-800 hover:text-white transition shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                        ❌ STRIKE
+                    </button>
+                    <button onclick="endGame()" class="px-4 py-2 bg-slate-800 border border-slate-700 text-xs font-bold rounded-xl hover:bg-slate-700 text-slate-300 transition">🏆 End Game</button>
                 </div>
             </div>
+
             <div class="flex-1 flex flex-col items-center">
-                <div class="w-full bg-slate-800 border border-slate-600 rounded-2xl p-6 text-center mb-6">
-                    <h3 id="feudQuestionText" class="text-2xl md:text-4xl font-extrabold text-white"></h3>
+                <div class="w-full bg-slate-800 border border-slate-600 rounded-2xl p-6 text-center shadow-xl mb-6">
+                    <h3 id="feudQuestionText" class="text-2xl md:text-4xl font-extrabold text-white">We surveyed 100 people...</h3>
                 </div>
-                <div class="bg-blue-900 border-4 border-blue-500 rounded-full px-12 py-3 mb-8">
-                    <span class="text-blue-200 text-sm font-bold mr-2">Points to Award:</span>
+
+                <div class="bg-blue-900 border-4 border-blue-500 rounded-full px-12 py-3 mb-8 shadow-[0_0_20px_rgba(59,130,246,0.5)]">
+                    <span class="text-blue-200 text-sm font-bold uppercase tracking-widest mr-2">Round Bank:</span>
                     <span id="feudBankDisplay" class="text-3xl font-black text-amber-400">0</span>
                 </div>
-                <div class="feud-board rounded-[2rem] p-4 md:p-8 w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-4 mb-8" id="feudAnswersGrid"></div>
-                <div class="flex space-x-4 mb-8" id="feudStrikeIndicators">
-                    <button onclick="toggleFeudStrike(1)" class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50" id="strike_1">X</button>
-                    <button onclick="toggleFeudStrike(2)" class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50" id="strike_2">X</button>
-                    <button onclick="toggleFeudStrike(3)" class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50" id="strike_3">X</button>
+
+                <div class="feud-board rounded-[2rem] p-4 md:p-8 w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-4 mb-8" id="feudAnswersGrid">
+                    <!-- Answers injected here -->
                 </div>
-                <div class="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl mt-auto">
+
+                <div class="flex space-x-4 mb-8" id="feudStrikeIndicators">
+                    <div class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50 cursor-pointer" id="strike_1" onclick="toggleStrike(1)">X</div>
+                    <div class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50 cursor-pointer" id="strike_2" onclick="toggleStrike(2)">X</div>
+                    <div class="w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50 cursor-pointer" id="strike_3" onclick="toggleStrike(3)">X</div>
+                </div>
+
+                <div class="w-full bg-slate-900/80 border border-slate-800 p-6 rounded-3xl mt-auto">
                     <div class="flex justify-between items-center mb-4">
-                        <h4 class="text-sm font-bold text-slate-400 uppercase">Award Pending Points To:</h4>
-                        <button onclick="nextFeudQuestion()" class="text-sm text-amber-400 font-bold underline">Next Question ➔</button>
+                        <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">Award Round Bank To:</h4>
+                        <button onclick="nextFeudQuestion()" class="text-sm text-amber-400 font-bold hover:text-amber-300 underline">Next Question ➔</button>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3" id="feudTeamScores"></div>
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3" id="feudTeamScores">
+                        <!-- Populated dynamically -->
+                    </div>
                 </div>
             </div>
+        </section>
+
+        <!-- VIEW 6: FINAL PODIUM -->
+        <section id="viewPodium" class="hidden flex-1 flex flex-col p-6 max-w-4xl mx-auto w-full items-center justify-center text-center">
+            <span class="text-6xl mb-4">👑</span>
+            <h2 class="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-2">Final Champions</h2>
+            <p class="text-slate-400 mb-10">Amazing Diwali celebration! Here are the final standings:</p>
+            
+            <div class="w-full space-y-4 mb-10" id="podiumList">
+                <!-- Populated dynamically -->
+            </div>
+
+            <button onclick="goToLanding()" class="bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black py-4 px-12 rounded-full shadow-lg hover:scale-105 transition">CHOOSE ANOTHER GAME</button>
         </section>
 
     </main>
 
-    <!-- EDIT TEAM MODAL -->
-    <div id="editTeamModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/80 backdrop-blur-sm">
-        <div class="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-md w-full">
-            <h3 class="text-2xl font-bold text-white mb-4">Edit Team Name</h3>
-            <input type="text" id="editTeamInput" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white mb-6" maxlength="15">
-            <div class="flex justify-end space-x-3">
-                <button onclick="closeEditModal()" class="px-5 py-2 text-slate-400">Cancel</button>
-                <button onclick="saveTeamName()" class="px-5 py-2 bg-amber-600 text-white font-bold rounded-xl">Save</button>
+    <!-- GIANT STRIKE OVERLAY -->
+    <div id="giantStrikeOverlay" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/60 pointer-events-none">
+        <div class="text-[20rem] font-black text-red-600 drop-shadow-[0_0_50px_rgba(220,38,38,1)]" id="giantStrikeText" style="-webkit-text-stroke: 10px black;">
+            ❌
+        </div>
+    </div>
+
+    <!-- EDIT TEAM NAME MODAL -->
+    <div id="editTeamModal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div class="bg-slate-900 border border-slate-700 p-6 md:p-8 rounded-3xl max-w-md w-full shadow-2xl">
+            <h3 class="text-xl font-bold text-white mb-2">Edit Team Name</h3>
+            <p class="text-xs text-slate-400 mb-6">Enter a new name for this team.</p>
+            <input type="text" id="modalTeamNameInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 mb-6 font-bold">
+            <div class="flex space-x-3">
+                <button onclick="closeEditModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition">Cancel</button>
+                <button onclick="saveTeamName()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition">Save</button>
             </div>
         </div>
     </div>
 
-    <!-- GIANT STRIKE OVERLAY -->
-    <div id="giantStrikeOverlay" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/60 pointer-events-none">
-        <div class="text-[15rem] md:text-[20rem] font-black text-red-600" id="giantStrikeText">❌</div>
-    </div>
+    <!-- SCRIPTS & FIREBASE CLOUD SYNC -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <!-- MOBILE SIMULATION MODAL -->
-    <div id="mobileJoinModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/80 p-4">
-        <div class="bg-slate-900 border border-slate-700 p-6 rounded-3xl max-w-sm w-full text-center">
-            <h3 class="text-2xl font-black text-white mb-2">📱 Player Simulator</h3>
-            <p class="text-slate-400 text-sm mb-6">Open the player screen in a new tab to test answering questions:</p>
-            <button onclick="window.open(window.location.href.split('?')[0] + '?pin=' + window.gamePinStr, '_blank')" class="w-full py-4 rounded-xl bg-blue-600 text-white font-black mb-4">OPEN PLAYER TAB ➔</button>
-            <button onclick="closeJoinSimulation()" class="w-full py-3 rounded-xl bg-slate-800 text-slate-300">Close</button>
-        </div>
-    </div>
+        // Global Firebase handles
+        let db, auth, currentUser;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'diwali-multiplayer-hub';
 
-    <script>
-        function createDiyas() {
-            const container = document.getElementById('diyaContainer');
-            for(let i=0; i<15; i++) {
-                let diya = document.createElement('div');
-                diya.innerHTML = '🪔';
-                diya.className = 'absolute text-2xl opacity-10 pulse-slow';
-                diya.style.left = `${Math.random() * 100}vw`;
-                diya.style.top = `${Math.random() * 100}vh`;
-                container.appendChild(diya);
+        async function initFirebase() {
+            try {
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    const firebaseConfig = JSON.parse(__firebase_config);
+                    const app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    currentUser = auth.currentUser;
+                }
+            } catch (e) {
+                console.warn("Firebase initialization fallback active:", e);
             }
         }
-        createDiyas();
+        initFirebase();
 
-        const teamColors = [
-            { bg: "bg-red-600", text: "text-red-400", lightBg: "bg-red-500/10", lightBorder: "border-red-500/30" },
-            { bg: "bg-blue-600", text: "text-blue-400", lightBg: "bg-blue-500/10", lightBorder: "border-blue-500/30" },
-            { bg: "bg-emerald-600", text: "text-emerald-400", lightBg: "bg-emerald-500/10", lightBorder: "border-emerald-500/30" },
-            { bg: "bg-amber-600", text: "text-amber-400", lightBg: "bg-amber-500/10", lightBorder: "border-amber-500/30" },
-            { bg: "bg-purple-600", text: "text-purple-400", lightBg: "bg-purple-500/10", lightBorder: "border-purple-500/30" }
+        // Make firebase tools accessible globally
+        window.fb = {
+            async saveGameState(pin, stateData) {
+                if (!db) return;
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'game_' + pin);
+                    await setDoc(ref, { ...stateData, updatedAt: Date.now() });
+                } catch(e) { console.error("Cloud save error:", e); }
+            },
+            listenGameState(pin, callback) {
+                if (!db) return () => {};
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'game_' + pin);
+                    return onSnapshot(ref, (docSnap) => {
+                        if (docSnap.exists()) {
+                            callback(docSnap.data());
+                        }
+                    }, (err) => { console.error("Cloud listener error:", err); });
+                } catch(e) { return () => {}; }
+            }
+        };
+    </script>
+
+    <script>
+        // KAHOOT QUESTIONS
+        const kahootDatabase = [
+            { cat: "Epic History", q: "According to the Ramayana, Diwali marks the return of Lord Rama to which city after 14 years in exile?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Lord+Rama+Ayodhya", options: ["Ayodhya", "Lanka", "Kashi", "Mathura"], correct: 0 },
+            { cat: "Sweets & Delicacies", q: "Which popular diamond-shaped sweet made from cashews is a staple during Diwali gifting?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Kaju+Katli", options: ["Gulab Jamun", "Kaju Katli", "Jalebi", "Soan Papdi"], correct: 1 },
+            { cat: "Traditions", q: "What traditional earthen lamp lit during Diwali is called?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Diya", options: ["Candle", "Lantern", "Diya", "Mashal"], correct: 2 },
+            { cat: "Mythology", q: "Which goddess of wealth and prosperity is primarily worshipped during Diwali Puja?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Goddess+Lakshmi", options: ["Goddess Saraswati", "Goddess Durga", "Goddess Lakshmi", "Goddess Kali"], correct: 2 },
+            { cat: "Dhanteras", q: "Buying which of the following is considered highly auspicious on Dhanteras before Diwali?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Gold+and+Utensils", options: ["Old books", "Gold and Utensils", "Plastic chairs", "Woolen clothes"], correct: 1 },
+            { cat: "Regional Celebrations", q: "In West Bengal, Diwali coincides with the worship of which fierce goddess?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Goddess+Kali", options: ["Goddess Kali", "Goddess Parvati", "Goddess Ganga", "Goddess Annapurna"], correct: 0 },
+            { cat: "Art & Decor", q: "What colorful floor art made with colored rice, flower petals, or sand is drawn at entrances during Diwali?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Rangoli", options: ["Mandala", "Rangoli", "Kolam", "Alpana"], correct: 1 },
+            { cat: "Bollywood", q: "In the Bollywood blockbuster 'Kabhi Khushi Kabhie Gham...', Jaya Bachchan famously welcomes Shah Rukh Khan home during which festival scene?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Diwali+Welcome", options: ["Holi", "Karva Chauth", "Diwali", "Eid"], correct: 2 },
+            { cat: "Sikh History", q: "For Sikhs, Diwali is celebrated as Bandi Chhor Divas, commemorating the release of Guru Hargobind Ji from which fort?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Gwalior+Fort", options: ["Red Fort", "Lahore Fort", "Gwalior Fort", "Agra Fort"], correct: 2 },
+            { cat: "Jain Tradition", q: "For Jains, Diwali marks the anniversary of the attainment of moksha by which Tirthankara?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Lord+Mahavira", options: ["Lord Rishabhanatha", "Lord Mahavira", "Lord Parshvanatha", "Lord Neminath"], correct: 1 },
+            { cat: "Firecrackers", q: "Which ground-spinning firecracker is affectionately known by a name meaning 'flower pot'?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Anaar", options: ["Charkhi", "Anaar", "Rocket", "Fuljhadi"], correct: 1 },
+            { cat: "History", q: "Diwali falls on the dark night of which Hindu lunar month?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Kartik", options: ["Bhadrapada", "Kartik", "Shravana", "Phalguna"], correct: 1 },
+            { cat: "Sweets & Delicacies", q: "Which layered flaky sweet cube is famous for being universally gifted and playfully joked about during Diwali?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Soan+Papdi", options: ["Mysore Pak", "Soan Papdi", "Peda", "Rasgulla"], correct: 1 },
+            { cat: "Mythology", q: "Who accompanied Lord Rama and Sita during their 14-year exile and triumphant return?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Lakshmana", options: ["Bharata", "Lakshmana", "Hanuman", "Sugriva"], correct: 1 },
+            { cat: "Traditions", q: "What is the primary reason homes are thoroughly cleaned and whitewashed before Diwali?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Welcome+Lakshmi", options: ["To welcome Goddess Lakshmi", "To prepare for winter", "Annual government inspection", "To invite guests"], correct: 0 },
+            { cat: "South India", q: "In Tamil Nadu and other parts of South India, Naraka Chaturdashi (Choti Diwali) celebrates the defeat of Narakasura by whom?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Lord+Krishna", options: ["Lord Rama", "Lord Shiva", "Lord Krishna", "Lord Vishnu"], correct: 2 },
+            { cat: "Gujarat", q: "The day immediately following Diwali is celebrated in Gujarat as Bestu Varas, marking what occasion?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Gujarati+New+Year", options: ["Gujarati New Year", "Harvest Festival", "Monsoon Start", "Temple Anniversary"], correct: 0 },
+            { cat: "Mythology", q: "Lord Ganesha is paired with Goddess Lakshmi during Diwali pujas to represent wisdom alongside what?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Wealth", options: ["Strength", "Wealth", "Courage", "Knowledge"], correct: 1 },
+            { cat: "Global Celebrations", q: "Which iconic British city hosts one of the largest Diwali celebrations outside of India on the Golden Mile?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Leicester", options: ["London", "Leicester", "Birmingham", "Manchester"], correct: 1 },
+            { cat: "Traditions", q: "What sweet made from split yellow gram (moong dal) and ghee is traditionally cooked during winter and Diwali?", image: "https://placehold.co/600x400/1e293b/f59e0b?text=Moong+Dal+Halwa", options: ["Moong Dal Halwa", "Gajar Halwa", "Besan Ladoo", "Malpua"], correct: 0 }
         ];
 
-        let teams = [];
-        let gameMode = 'none'; 
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        let pinParam = urlParams.get('pin');
-        window.gamePinStr = pinParam || Math.floor(100000 + Math.random() * 900000).toString();
-        
-        let editingTeamId = null;
-        let isHost = true;
-        let hostGameState = 'lobby';
+        // JEOPARDY QUESTIONS (5x5 Grid)
+        const jeopardyDatabase = [
+            { category: "Epic History", questions: [
+                { points: 100, q: "Ayodhya is situated on the banks of this sacred river.", a: "What is the Saryu River?" },
+                { points: 200, q: "Name the loyal brother who placed Rama's sandals on the throne during the exile.", a: "Who is Bharata?" },
+                { points: 300, q: "The demon king vanquished by Lord Rama before returning to Ayodhya.", a: "Who is Ravana?" },
+                { points: 400, q: "The monkey general who crossed the ocean to locate Sita.", a: "Who is Hanuman?" },
+                { points: 500, q: "The sage who guided Rama and Lakshmana in their youth and during Vishwamitra's yajna.", a: "Who is Sage Vishwamitra?" }
+            ]},
+            { category: "Sweets & Food", questions: [
+                { points: 100, q: "Round golden sweet ball made from chickpea flour, sugar, and ghee.", a: "What is Ladoo / Motichoor Ladoo?" },
+                { points: 200, q: "Syrup-soaked crispy orange spiral sweet popular across India.", a: "What is Jalebi?" },
+                { points: 300, q: "Rich milk fudge often garnished with silver leaf (vark).", a: "What is Barfi (or Peda)?" },
+                { points: 400, q: "Traditional South Indian rich sweet made from generous amounts of ghee, gram flour, and sugar.", a: "What is Mysore Pak?" },
+                { points: 500, q: "Crispy fried sweet wheat dough dumplings stuffed with khoya and dry fruits made during Diwali.", a: "What is Gujiya (or Karanji)?" }
+            ]},
+            { category: "Rituals & Decor", questions: [
+                { points: 100, q: "The specific oil traditionally used in diyas for Diwali pujas.", a: "What is Sesame oil (Til oil) or Ghee?" },
+                { points: 200, q: "Hanging floral decorations made primarily of marigolds put on doors.", a: "What is a Toran or Flower Garland?" },
+                { points: 300, q: "The first day of Diwali festivities dedicated to cleaning and buying utensils or gold.", a: "What is Dhanteras?" },
+                { points: 400, q: "The day after Diwali celebrating the bond between husband and wife.", a: "What is Govardhan Puja (Annakut) / Padwa?" },
+                { points: 500, q: "The final day of Diwali week celebrating brother-sister bonds.", a: "What is Bhai Dooj (Bhav Bij)?" }
+            ]},
+            { category: "Bollywood & Pop", questions: [
+                { points: 100, q: "In 'Mohabbatein', Amitabh Bachchan insists strict traditions be followed during this autumn festival.", a: "What is Diwali?" },
+                { points: 200, q: "Famous upbeat song starting with 'Happy Diwali' featuring Shah Rukh Khan and Kareena Kapoor.", a: "What is 'Happy Diwali' from Ra.One?" },
+                { points: 300, q: "In 'Dilwale Dulhania Le Jayenge', Simran and Raj first meet during a trip across this continent.", a: "What is Europe?" },
+                { points: 400, q: "Shah Rukh Khan's grand annual star-studded Diwali bash is famously hosted at his Mumbai residence named this.", a: "What is Mannat?" },
+                { points: 500, q: "In 'Hum Aapke Hain Koun..!', grand family celebrations and festivals are set in this joyous household atmosphere.", a: "What is a joint family wedding/festival home?" }
+            ]},
+            { category: "Regional Culture", questions: [
+                { points: 100, q: "In Punjab, Diwali night is especially famous for massive displays of these outdoors.", a: "What are Firecrackers (Phatakas)?" },
+                { points: 200, q: "In Bengal, Kali Puja pandals feature elaborate clay idols of the goddess standing atop this deity.", a: "Who is Lord Shiva?" },
+                { points: 300, q: "In Maharashtra, people bathe before sunrise on Narak Chaturdashi using fragrant powders called this.", a: "What is Ubtan?" },
+                { points: 400, q: "In South India, people wake up before dawn to burst oil baths and wear these new items.", a: "What are New Clothes?" },
+                { points: 500, q: "The traditional Gujarati New Year celebrated the day after Diwali.", a: "What is Bestu Varas?" }
+            ]}
+        ];
+
+        // FAMILY FEUD DATABASE
+        const feudDatabase = [
+            {
+                q: "Name a popular sweet distributed during Diwali.",
+                answers: [
+                    { text: "Kaju Katli", points: 35 },
+                    { text: "Gulab Jamun", points: 25 },
+                    { text: "Ladoo / Motichoor", points: 20 },
+                    { text: "Jalebi", points: 12 },
+                    { text: "Barfi", points: 8 }
+                ]
+            },
+            {
+                q: "Name something people traditionally buy on Dhanteras.",
+                answers: [
+                    { text: "Gold Jewelry / Coins", points: 45 },
+                    { text: "Silver Items", points: 25 },
+                    { text: "Steel Utensils", points: 15 },
+                    { text: "Electronics / Appliances", points: 10 },
+                    { text: "Broom (Jhadu)", points: 5 }
+                ]
+            },
+            {
+                q: "Name a common Diwali decoration item.",
+                answers: [
+                    { text: "Diyas / Earthen Lamps", points: 40 },
+                    { text: "Fairy Lights / Ladi", points: 25 },
+                    { text: "Rangoli Colors", points: 15 },
+                    { text: "Marigold Flower Garlands", points: 12 },
+                    { text: "Toran / Door Hangings", points: 8 }
+                ]
+            },
+            {
+                q: "Name a popular type of firecracker (Phataka).",
+                answers: [
+                    { text: "Phuljhadi / Sparklers", points: 38 },
+                    { text: "Anaar / Flower Pot", points: 27 },
+                    { text: "Charkhi / Ground Spinner", points: 20 },
+                    { text: "Rockets", points: 10 },
+                    { text: "Ladi / Chain Crackers", points: 5 }
+                ]
+            },
+            {
+                q: "Name a deity prominently worshipped during Diwali Puja.",
+                answers: [
+                    { text: "Goddess Lakshmi", points: 55 },
+                    { text: "Lord Ganesha", points: 30 },
+                    { text: "Lord Rama", points: 8 },
+                    { text: "Goddess Saraswati", points: 4 },
+                    { text: "Lord Kubera", points: 3 }
+                ]
+            }
+        ];
+
+        // GLOBAL APP STATE
+        let gameMode = 'none'; // 'kahoot', 'jeopardy', 'feud'
+        let gamePinStr = "849201";
+        let teams = [
+            { id: "t1", name: "Royal Rangolis", score: 0, color: { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" }, connected: true },
+            { id: "t2", name: "Diva Dynamos", score: 0, color: { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" }, connected: true },
+            { id: "t3", name: "Ladoo Legends", score: 0, color: { text: "text-amber-400", bg: "bg-amber-500", lightBg: "bg-amber-950/20", lightBorder: "border-amber-900/40" }, connected: true },
+            { id: "t4", name: "Sparkler Squad", score: 0, color: { text: "text-emerald-400", bg: "bg-emerald-500", lightBg: "bg-emerald-950/20", lightBorder: "border-emerald-900/40" }, connected: true },
+            { id: "t5", name: "Lotus Luminaries", score: 0, color: { text: "text-purple-400", bg: "bg-purple-500", lightBg: "bg-purple-950/20", lightBorder: "border-purple-900/40" }, connected: true }
+        ];
+
+        // KAHOOT STATE
         let currentQuestionIndex = 0;
         let timerInterval = null;
         let timeLeft = 30;
 
-        window.onload = () => {
-            const savedHostLogin = localStorage.getItem('diwali_host_logged_in');
-            if (savedHostLogin === 'true') {
-                document.getElementById('viewHostLogin').classList.add('hidden');
-            }
+        // JEOPARDY STATE
+        let jTilesPlayed = 0;
+        let jActiveTile = null;
 
+        // FEUD STATE
+        let feudCurrentQuestion = 0;
+        let feudRoundPoints = 0;
+        let feudStrikes = 0;
+        let feudAnswersRevealed = 0;
+
+        // INITIALIZATION ON LOAD
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pinParam = urlParams.get('pin');
+            
             if (pinParam) {
-                isHost = false;
+                // Render Player View
+                document.getElementById('hostPortalView').classList.add('hidden');
                 document.getElementById('viewHostLogin').classList.add('hidden');
-                document.querySelector('header').classList.add('hidden');
+                document.getElementById('playerPortalView').classList.remove('hidden');
                 
-                const savedPlayerName = localStorage.getItem('diwali_player_name_' + pinParam);
-                if (savedPlayerName) {
+                window.gamePinStr = pinParam;
+                
+                const savedTeamId = localStorage.getItem('diwali_my_team_id_' + pinParam);
+                const savedTeamName = localStorage.getItem('diwali_player_name_' + pinParam);
+                
+                if (savedTeamId && savedTeamName) {
                     document.getElementById('viewPlayerJoin').classList.add('hidden');
                     document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-                    document.getElementById('playerJoinedNameDisplay').innerText = savedPlayerName;
-                    connectPlayerSync(savedPlayerName);
-                } else {
-                    document.getElementById('viewPlayerJoin').classList.remove('hidden');
+                    document.getElementById('playerActiveTeamBadge').innerText = savedTeamName;
                 }
-                document.getElementById('playerDisplayPin').innerText = pinParam;
-                document.getElementById('viewLanding').classList.add('hidden');
-                setInterval(() => { if (timeLeft > 0) timeLeft--; }, 1000);
+                
+                // Start listening to Firebase cloud state for this PIN
+                setTimeout(() => {
+                    if (window.fb && window.fb.listenGameState) {
+                        window.fb.listenGameState(pinParam, handlePlayerCloudSync);
+                    }
+                }, 1000);
             } else {
-                // Host default teams init
-                changeTeamCount(4);
-                setInterval(pollHostSync, 1000);
+                const hostLoggedIn = sessionStorage.getItem('diwali_host_logged_in');
+                if (hostLoggedIn === 'true') {
+                    activateHostMode();
+                } else {
+                    document.getElementById('hostPortalView').classList.add('hidden');
+                    document.getElementById('viewHostLogin').classList.remove('hidden');
+                }
             }
         };
 
         function attemptHostLogin() {
-            const id = document.getElementById('hostId').value;
-            const pass = document.getElementById('hostPass').value;
-            if (id === 'host' && pass === 'Belmont@2026') {
-                localStorage.setItem('diwali_host_logged_in', 'true');
-                document.getElementById('viewHostLogin').classList.add('hidden');
+            const user = document.getElementById('hostUserInput').value.trim();
+            const pass = document.getElementById('hostPassInput').value.trim();
+            const err = document.getElementById('loginErrorMsg');
+
+            if (user === 'host' && pass === 'Belmont@2026') {
+                sessionStorage.setItem('diwali_host_logged_in', 'true');
+                activateHostMode();
             } else {
-                document.getElementById('loginError').classList.remove('hidden');
+                err.innerText = "Invalid credentials. Use host / Belmont@2026";
+                err.classList.remove('hidden');
             }
         }
 
-        function broadcastState(newState) {
-            hostGameState = newState;
-            const syncPayload = {
-                state: newState,
-                teams: teams,
-                currentQ: currentQuestionIndex,
-                timestamp: Date.now()
-            };
-            localStorage.setItem('diwali_sync_' + window.gamePinStr, JSON.stringify(syncPayload));
-        }
-
-        function pollHostSync() {
-            if (!isHost || gameMode !== 'kahoot') return;
-            const raw = localStorage.getItem('diwali_sync_' + window.gamePinStr);
-            if (raw) {
-                try {
-                    const data = JSON.parse(raw);
-                    if (data.teams) {
-                        let updated = false;
-                        data.teams.forEach(pt => {
-                            let existing = teams.find(t => t.id === pt.id);
-                            if (existing) {
-                                if (pt.hasAnswered && !existing.hasAnswered) {
-                                    existing.hasAnswered = true;
-                                    existing.answerIndex = pt.answerIndex;
-                                    existing.timeLeftOnAnswer = pt.timeLeftOnAnswer;
-                                    updated = true;
-                                }
-                            } else {
-                                teams.push(pt);
-                                updated = true;
-                            }
-                        });
-                        if (updated) {
-                            renderLobbyTeams();
-                            checkAllAnswered();
-                        }
-                    }
-                } catch(e) {}
-            }
-        }
-
-        function playerSubmitJoin() {
-            const name = document.getElementById('playerNameInput').value.trim();
-            if (!name) return;
-            localStorage.setItem('diwali_player_name_' + pinParam, name);
-            connectPlayerSync(name);
-        }
-
-        function connectPlayerSync(name) {
-            document.getElementById('viewPlayerJoin').classList.add('hidden');
-            document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-            document.getElementById('playerJoinedNameDisplay').innerText = name;
-
-            const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
-            localStorage.setItem('diwali_my_player_id_' + pinParam, playerId);
-
-            let raw = localStorage.getItem('diwali_sync_' + pinParam);
-            let data = raw ? JSON.parse(raw) : { state: 'lobby', teams: [] };
+        function activateHostMode() {
+            document.getElementById('viewHostLogin').classList.add('hidden');
+            document.getElementById('hostPortalView').classList.remove('hidden');
+            goToLanding();
             
-            let existing = data.teams.find(t => t.name === name);
-            if (!existing) {
-                data.teams.push({
-                    id: playerId,
-                    name: name,
-                    score: 0,
-                    hasAnswered: false,
-                    answerIndex: -1,
-                    connected: true,
-                    color: teamColors[data.teams.length % teamColors.length]
-                });
-            } else {
-                existing.connected = true;
-            }
-            localStorage.setItem('diwali_sync_' + pinParam, JSON.stringify(data));
-
-            setInterval(() => {
-                let currentSync = localStorage.getItem('diwali_sync_' + pinParam);
-                if (currentSync) {
-                    try {
-                        let parsed = JSON.parse(currentSync);
-                        handlePlayerStateChange(parsed.state);
-                    } catch(e){}
+            // Listen to cloud state as host to receive player joins/answers
+            setTimeout(() => {
+                if (window.fb && window.fb.listenGameState) {
+                    window.fb.listenGameState(gamePinStr, handleHostCloudSync);
                 }
-            }, 800);
+            }, 1000);
         }
 
-        function playerLeaveGame() {
-            localStorage.removeItem('diwali_player_name_' + pinParam);
-            document.getElementById('viewPlayerWaiting').classList.add('hidden');
-            document.getElementById('viewPlayerJoin').classList.remove('hidden');
-            document.getElementById('playerNameInput').value = '';
-        }
-
-        function handlePlayerStateChange(state) {
-            if (state === 'kahoot_q') {
-                document.getElementById('viewPlayerWaiting').classList.add('hidden');
-                document.getElementById('viewPlayerKahootControls').classList.remove('hidden');
-                timeLeft = 30;
-            } else if (state === 'kahoot_feedback') {
-                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
-                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-                document.getElementById('playerStatusTitle').innerText = "Round Over";
-                document.getElementById('playerStatusSubtitle').innerText = "Check the main screen!";
-            } else if (state === 'end_game') {
-                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
-                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-                document.getElementById('playerStatusTitle').innerText = "Game Over!";
-                document.getElementById('playerStatusSubtitle').innerText = "Check the podium on the big screen!";
+        function checkHostAuthOrLanding() {
+            if (sessionStorage.getItem('diwali_host_logged_in') === 'true') {
+                goToLanding();
             }
-        }
-
-        function playerSubmitAnswer(index) {
-            document.getElementById('viewPlayerKahootControls').classList.add('hidden');
-            document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-            document.getElementById('playerStatusTitle').innerText = "Answer Sent!";
-            document.getElementById('playerStatusSubtitle').innerText = "Waiting for time to finish...";
-            
-            const playerId = localStorage.getItem('diwali_my_player_id_' + pinParam);
-            let raw = localStorage.getItem('diwali_sync_' + pinParam);
-            if (raw) {
-                let data = JSON.parse(raw);
-                let t = data.teams.find(x => x.id === playerId);
-                if (t) {
-                    t.hasAnswered = true;
-                    t.answerIndex = index;
-                    t.timeLeftOnAnswer = timeLeft;
-                    localStorage.setItem('diwali_sync_' + pinParam, JSON.stringify(data));
-                }
-            }
-        }
-
-        function checkAllAnswered() {
-            if (!isHost || gameMode !== 'kahoot' || hostGameState !== 'kahoot_q' || teams.length === 0) return;
-            if (teams.every(t => t.hasAnswered)) skipToFeedback();
         }
 
         function goToLanding() {
             gameMode = 'none';
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
             document.getElementById('viewLanding').classList.remove('hidden');
+            document.getElementById('viewLobby').classList.add('hidden');
+            document.getElementById('viewQuestion').classList.add('hidden');
+            document.getElementById('viewFeedback').classList.add('hidden');
+            document.getElementById('viewPodium').classList.add('hidden');
+            document.getElementById('viewJeopardyBoard').classList.add('hidden');
+            document.getElementById('viewJeopardyQuestion').classList.add('hidden');
+            document.getElementById('viewJeopardyAnswer').classList.add('hidden');
+            document.getElementById('viewFeudBoard').classList.add('hidden');
             document.getElementById('gameStatusIndicator').classList.add('hidden');
-            document.getElementById('headerSubtitle').innerText = "Multi-Game Experience";
+            document.getElementById('headerSubtitle').innerText = "Cloud Multiplayer Hub";
+            pushHostStateToCloud();
         }
 
         function selectGameMode(mode) {
             gameMode = mode;
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById('viewLanding').classList.add('hidden');
             document.getElementById('viewLobby').classList.remove('hidden');
             
             const qrPanel = document.getElementById('qrCodePanel');
             const teamsPanel = document.getElementById('teamsPanel');
-            const selectEl = document.getElementById('teamCountSelect');
             
-            if(mode === 'kahoot') {
-                selectEl.parentElement.classList.add('hidden');
-                teams = [];
-                for(let i=0; i<4; i++) {
-                    teams.push({ id: (i+1).toString(), name: `Team ${i + 1}`, score: 0, connected: false, color: teamColors[i % teamColors.length] });
-                }
-                renderLobbyTeams();
-                broadcastState('lobby');
-            } else {
-                selectEl.parentElement.classList.remove('hidden');
-                let maxLimit = mode === 'jeopardy' ? 5 : 3;
-                selectEl.innerHTML = '';
-                for(let i = 2; i <= maxLimit; i++) {
-                    const opt = document.createElement('option');
-                    opt.value = i; opt.text = i + ' Teams';
-                    if (i === maxLimit) opt.selected = true;
-                    selectEl.appendChild(opt);
-                }
-                changeTeamCount(maxLimit);
-            }
-
             if (mode === 'kahoot') {
                 document.getElementById('lobbyModeBadge').innerText = "Kahoot Edition";
-                document.getElementById('lobbyModeBadge').className = "px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-widest inline-block mb-3";
                 document.getElementById('lobbyTitle').innerText = "Ready for Kahoot?";
+                document.getElementById('headerSubtitle').innerText = "Kahoot Edition Active";
                 qrPanel.classList.remove('hidden');
                 teamsPanel.className = "lg:col-span-7 bg-slate-900/90 border border-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col justify-between";
                 initQRCode();
             } else {
                 document.getElementById('lobbyTitle').innerText = mode === 'jeopardy' ? "Ready for Jeopardy?" : "Ready to Feud?";
+                document.getElementById('headerSubtitle').innerText = mode === 'jeopardy' ? "Jeopardy Edition Active" : "Family Feud Edition Active";
                 qrPanel.classList.add('hidden');
                 teamsPanel.className = "lg:col-span-12 w-full max-w-4xl mx-auto bg-slate-900/90 border border-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col justify-between";
+                
+                let defaultCount = mode === 'jeopardy' ? 5 : 3;
+                changeTeamCount(defaultCount);
             }
+            renderLobbyTeams();
+            pushHostStateToCloud();
         }
 
         function changeTeamCount(count) {
-            const newTeams = [];
-            for (let i = 0; i < count; i++) {
-                if (teams[i]) newTeams.push(teams[i]);
-                else newTeams.push({ id: (i+1).toString(), name: `Team ${i + 1}`, score: 0, connected: false, color: teamColors[i % teamColors.length] });
+            const targetCount = parseInt(count);
+            if (teams.length > targetCount) {
+                teams = teams.slice(0, targetCount);
+            } else {
+                let colors = [
+                    { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" },
+                    { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" },
+                    { text: "text-amber-400", bg: "bg-amber-500", lightBg: "bg-amber-950/20", lightBorder: "border-amber-900/40" },
+                    { text: "text-emerald-400", bg: "bg-emerald-500", lightBg: "bg-emerald-950/20", lightBorder: "border-emerald-900/40" },
+                    { text: "text-purple-400", bg: "bg-purple-500", lightBg: "bg-purple-950/20", lightBorder: "border-purple-900/40" }
+                ];
+                while(teams.length < targetCount) {
+                    let idx = teams.length;
+                    teams.push({ id: "t" + (idx+1), name: "Team " + (idx+1), score: 0, color: colors[idx % colors.length], connected: true });
+                }
             }
-            teams = newTeams;
             renderLobbyTeams();
         }
 
         function initQRCode() {
-            document.getElementById('gamePin').innerText = window.gamePinStr;
-            let baseUrl = window.location.href.split('?')[0];
-            const joinUrl = `${baseUrl}?pin=${window.gamePinStr}`;
-            const qrContainer = document.getElementById("qrcode");
-            qrContainer.innerHTML = "";
-            new QRCode(qrContainer, { text: joinUrl, width: 160, height: 160, colorDark: "#0f172a", colorLight: "#ffffff" });
+            document.getElementById('gamePin').innerText = gamePinStr;
+            const container = document.getElementById('qrcodeContainer');
+            container.innerHTML = "";
+            
+            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr;
+            
+            try {
+                new QRCode(container, {
+                    text: joinUrl,
+                    width: 160,
+                    height: 160,
+                    colorDark: "#0f172a",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } catch(e) {
+                container.innerHTML = `<p class="text-xs text-slate-900 font-bold p-4">Join Link:<br><a href="${joinUrl}" target="_blank" class="text-blue-600 underline">${joinUrl}</a></p>`;
+            }
+        }
+
+        function openPlayerTab() {
+            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr;
+            window.open(joinUrl, '_blank');
         }
 
         function renderLobbyTeams() {
             const container = document.getElementById('teamList');
             if(!container) return;
             container.innerHTML = '';
+            document.getElementById('teamCountIndicator').innerText = teams.length;
+            
             teams.forEach((t) => {
-                const isConn = t.connected || gameMode === 'kahoot';
                 const c = t.color;
                 container.innerHTML += `
                     <div class="flex items-center justify-between p-3 rounded-xl border ${c.lightBg} ${c.lightBorder}">
@@ -712,323 +752,488 @@
                             <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold bg-slate-800 border border-slate-700 ${c.text}">${t.name.substring(0,2).toUpperCase()}</div>
                             <div>
                                 <h4 class="font-bold text-white text-lg">${t.name}</h4>
-                                <span class="text-xs ${isConn ? 'text-emerald-400 font-bold' : 'text-slate-500'} flex items-center">
-                                    ${isConn ? '<span class="w-2 h-2 rounded-full bg-emerald-400 mr-1 animate-pulse"></span> Connected' : 'Waiting...'}
+                                <span class="text-xs ${t.connected ? 'text-emerald-400 font-bold' : 'text-slate-500'} flex items-center">
+                                    ${t.connected ? '<span class="w-2 h-2 rounded-full bg-emerald-400 mr-1 animate-pulse"></span> Connected' : 'Waiting...'}
                                 </span>
                             </div>
                         </div>
-                        <button onclick="openEditModal('${t.id}')" class="text-slate-400 hover:text-white px-3 py-1 bg-slate-800 rounded-lg text-sm border border-slate-700">✏️ Edit</button>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="openEditModal('${t.id}')" class="text-slate-400 hover:text-white px-3 py-1 bg-slate-800 rounded-lg text-sm border border-slate-700">✏️ Edit</button>
+                            <button onclick="kickTeamMember('${t.id}')" class="text-red-400 hover:text-red-300 px-3 py-1 bg-red-950/40 rounded-lg text-sm border border-red-900/50">Kick ❌</button>
+                        </div>
                     </div>`;
             });
         }
 
+        let editingTeamId = null;
         function openEditModal(teamId) {
             editingTeamId = teamId;
-            const team = teams.find(t => t.id === teamId);
-            document.getElementById('editTeamInput').value = team.name;
+            const t = teams.find(x => x.id === teamId);
+            document.getElementById('modalTeamNameInput').value = t ? t.name : "";
             document.getElementById('editTeamModal').classList.remove('hidden');
         }
 
-        function closeEditModal() { document.getElementById('editTeamModal').classList.add('hidden'); }
+        function closeEditModal() {
+            document.getElementById('editTeamModal').classList.add('hidden');
+            editingTeamId = null;
+        }
 
         function saveTeamName() {
-            const newName = document.getElementById('editTeamInput').value.trim();
+            const newName = document.getElementById('modalTeamNameInput').value.trim();
             if (newName && editingTeamId) {
-                const team = teams.find(t => t.id === editingTeamId);
-                if(team) team.name = newName;
+                const t = teams.find(x => x.id === editingTeamId);
+                if(t) t.name = newName;
                 renderLobbyTeams();
+                pushHostStateToCloud();
             }
             closeEditModal();
         }
 
-        function openJoinSimulation() { document.getElementById('mobileJoinModal').classList.remove('hidden'); }
-        function closeJoinSimulation() { document.getElementById('mobileJoinModal').classList.add('hidden'); }
+        function kickTeamMember(teamId) {
+            teams = teams.filter(t => t.id !== teamId);
+            renderLobbyTeams();
+            pushHostStateToCloud();
+        }
+
+        function restartKahootGame() {
+            gamePinStr = Math.floor(100000 + Math.random() * 900000).toString();
+            teams = [];
+            currentQuestionIndex = 0;
+            renderLobbyTeams();
+            initQRCode();
+            pushHostStateToCloud('reset_game');
+        }
 
         function startGame() {
             document.getElementById('viewLobby').classList.add('hidden');
+            document.getElementById('gameStatusIndicator').classList.remove('hidden');
+            document.getElementById('gameStatusIndicator').classList.add('flex');
+
             if (gameMode === 'kahoot') {
                 currentQuestionIndex = 0;
-                document.getElementById('gameStatusIndicator').classList.remove('hidden');
-                document.getElementById('gameStatusIndicator').classList.add('flex');
-                broadcastState('kahoot_q');
                 loadKahootQuestion();
             } else if (gameMode === 'jeopardy') {
                 startJeopardy();
             } else if (gameMode === 'feud') {
+                feudCurrentQuestion = 0;
                 startFeud();
             }
         }
 
-        const kahootQuestions = [
-            { q: "What does the word 'Deepavali' literally translate to?", options: ["Row of lights", "Festival of colors", "Victory of good", "Arrival of winter"], correct: 0, img: "https://placehold.co/600x400/1e293b/fbbf24?text=Deepavali+Meaning" },
-            { q: "Which deity is primarily worshipped for wealth and prosperity on Diwali?", options: ["Saraswati", "Lakshmi", "Parvati", "Durga"], correct: 1 },
-            { q: "In the Ramayana, Lord Rama returned to which city after 14 years of exile?", options: ["Lanka", "Mathura", "Ayodhya", "Kashi"], correct: 2 },
-            { q: "What is the traditional sweet made of cashews that is widely gifted during Diwali?", options: ["Gulab Jamun", "Jalebi", "Kaju Katli", "Rasgulla"], correct: 2 },
-            { q: "Diwali falls on the new moon day of which Hindu month?", options: ["Chaitra", "Kartik", "Phalguna", "Shravana"], correct: 1 }
-        ];
-
+        /* ================= KAHOOT LOGIC ================= */
         function loadKahootQuestion() {
-            if (currentQuestionIndex >= kahootQuestions.length) return endGame();
+            if (currentQuestionIndex >= kahootDatabase.length) {
+                endGame();
+                return;
+            }
+
+            const q = kahootDatabase[currentQuestionIndex];
             document.getElementById('viewQuestion').classList.remove('hidden');
             document.getElementById('viewFeedback').classList.add('hidden');
-            document.getElementById('currentQNum').innerText = currentQuestionIndex + 1;
             
-            const q = kahootQuestions[currentQuestionIndex];
-            document.getElementById('qText').innerText = q.q;
+            document.getElementById('qCategoryTracker').innerText = `Question ${currentQuestionIndex + 1} of ${kahootDatabase.length} • ${q.cat}`;
+            document.getElementById('questionText').innerText = q.q;
             
-            const imgEl = document.getElementById('qImage');
-            if (q.img) { imgEl.src = q.img; imgEl.classList.remove('hidden'); } 
-            else { imgEl.classList.add('hidden'); }
+            const imgContainer = document.getElementById('questionImageContainer');
+            if (q.image) {
+                document.getElementById('questionImage').src = q.image;
+                imgContainer.classList.remove('hidden');
+            } else {
+                imgContainer.classList.add('hidden');
+            }
 
-            const grid = document.getElementById('answerGrid');
-            grid.innerHTML = '';
-            const colors = ['bg-red-600', 'bg-blue-600', 'bg-amber-500', 'bg-emerald-600'];
-            const shapes = ['▲', '◆', '●', '■'];
+            for(let i=0; i<4; i++) {
+                document.getElementById(`optionText${i}`).innerText = q.options[i];
+            }
 
-            q.options.forEach((opt, index) => {
-                grid.innerHTML += `
-                    <div class="relative ${colors[index]} text-white p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center min-h-[100px]">
-                        <div class="absolute top-2 left-2 text-2xl opacity-50">${shapes[index]}</div>
-                        <span class="text-xl md:text-2xl font-bold text-center z-10">${opt}</span>
-                    </div>`;
-            });
-
-            startTimer();
-        }
-
-        function startTimer() {
             timeLeft = 30;
-            const bar = document.getElementById('timerBar');
-            const text = document.getElementById('timerText');
-            clearInterval(timerInterval);
-            bar.style.width = '100%';
+            document.getElementById('timerDisplay').innerText = timeLeft;
             
+            pushHostStateToCloud('kahoot_q', { questionIndex: currentQuestionIndex });
+
+            if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(() => {
                 timeLeft--;
-                text.innerText = timeLeft + "s";
-                bar.style.width = (timeLeft / 30 * 100) + '%';
-                if (timeLeft <= 0) skipToFeedback();
+                document.getElementById('timerDisplay').innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    showKahootFeedback();
+                }
             }, 1000);
         }
 
-        function skipToFeedback() {
-            if (hostGameState === 'kahoot_feedback') return;
-            clearInterval(timerInterval);
-            
-            if (isHost) {
-                const q = kahootQuestions[currentQuestionIndex];
-                teams.forEach(t => {
-                    if (t.hasAnswered) {
-                        const isCorrect = (t.answerIndex === q.correct);
-                        const points = isCorrect ? Math.floor(500 + (500 * ((t.timeLeftOnAnswer || 0) / 30))) : 0;
-                        t.score += points;
-                        t.lastAnswerCorrect = isCorrect;
-                        t.lastPoints = points;
-                    } else {
-                        t.lastAnswerCorrect = false;
-                        t.lastPoints = 0;
-                    }
-                });
-                broadcastState('kahoot_feedback');
-            }
-            showKahootFeedback();
-        }
-
         function showKahootFeedback() {
+            if (timerInterval) clearInterval(timerInterval);
             document.getElementById('viewQuestion').classList.add('hidden');
             document.getElementById('viewFeedback').classList.remove('hidden');
-            
-            const q = kahootQuestions[currentQuestionIndex];
-            document.getElementById('correctAnswerText').innerText = q.options[q.correct];
 
-            const ms = document.getElementById('miniScoreboard');
-            ms.innerHTML = '';
-            teams.forEach((t) => {
-                ms.innerHTML += `
-                    <div class="bg-slate-900 border ${t.lastAnswerCorrect ? 'border-emerald-400' : 'border-slate-700'} p-3 rounded-xl flex flex-col items-center">
-                        <span class="text-[10px] uppercase font-bold text-slate-400">${t.name}</span>
-                        <span class="font-black text-xl text-white">${t.score}</span>
+            const sorted = [...teams].sort((a,b) => b.score - a.score);
+            const list = document.getElementById('feedbackScoreList');
+            list.innerHTML = "";
+            sorted.forEach((t, idx) => {
+                list.innerHTML += `
+                    <div class="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                        <div class="flex items-center space-x-3">
+                            <span class="font-black text-amber-400 text-lg">#${idx + 1}</span>
+                            <span class="font-bold text-white text-lg">${t.name}</span>
+                        </div>
+                        <span class="font-black text-2xl text-amber-400 font-mono">${t.score} pts</span>
                     </div>`;
             });
+
+            pushHostStateToCloud('kahoot_feedback');
         }
 
         function nextQuestion() {
             currentQuestionIndex++;
-            if (isHost) {
-                teams.forEach(t => { t.hasAnswered = false; t.answerIndex = -1; });
-                broadcastState('kahoot_q');
-            }
             loadKahootQuestion();
         }
 
-        function endGame() {
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-            document.getElementById('gameStatusIndicator').classList.add('hidden');
-            document.getElementById('viewPodium').classList.remove('hidden');
-            
-            if (isHost && gameMode === 'kahoot') broadcastState('end_game');
-
-            const sortedTeams = [...teams].sort((a,b) => b.score - a.score);
-            if (sortedTeams[0]) { document.getElementById('p1Name').innerText = sortedTeams[0].name; document.getElementById('p1Score').innerText = sortedTeams[0].score + " pts"; }
-            if (sortedTeams[1]) { document.getElementById('p2Name').innerText = sortedTeams[1].name; document.getElementById('p2Score').innerText = sortedTeams[1].score + " pts"; }
-            if (sortedTeams[2]) { document.getElementById('p3Name').innerText = sortedTeams[2].name; document.getElementById('p3Score').innerText = sortedTeams[2].score + " pts"; }
-
-            setTimeout(() => { document.getElementById('podium2').classList.replace('opacity-0', 'opacity-100'); document.getElementById('podium2').classList.replace('translate-y-10', 'translate-y-0'); }, 300);
-            setTimeout(() => { document.getElementById('podium3').classList.replace('opacity-0', 'opacity-100'); document.getElementById('podium3').classList.replace('translate-y-10', 'translate-y-0'); }, 600);
-            setTimeout(() => { document.getElementById('podium1').classList.replace('opacity-0', 'opacity-100'); document.getElementById('podium1').classList.replace('translate-y-10', 'translate-y-0'); if(window.confetti) window.confetti(); }, 900);
-        }
-
-        const jeopardyDatabase = [
-            { category: "Epic History", questions: [ { points: 100, q: "Lord Rama returned to this kingdom after 14 years.", a: "What is Ayodhya?" }, { points: 200, q: "This demon king was defeated by Lord Rama.", a: "Who is Ravana?" }, { points: 300, q: "This brother accompanied Rama in exile.", a: "Who is Lakshmana?" }, { points: 400, q: "Diwali marks Lord Krishna's victory over this demon.", a: "Who is Narakasura?" }, { points: 500, q: "The traditional Gujarati New Year following Diwali.", a: "What is Bestu Varas?" } ] },
-            { category: "Rituals & Puja", questions: [ { points: 100, q: "This animal is considered a sacred vehicle for Goddess Lakshmi.", a: "What is the Owl?" }, { points: 200, q: "The primary item bought on Dhanteras.", a: "What is Gold/Metal?" }, { points: 300, q: "This deity is worshipped alongside Lakshmi for intellect.", a: "Who is Lord Ganesha?" }, { points: 400, q: "The number of days the Diwali festival traditionally lasts.", a: "What is Five?" }, { points: 500, q: "This day celebrates the bond between brothers and sisters.", a: "What is Bhai Dooj?" } ] },
-            { category: "Sweet Treats", questions: [ { points: 100, q: "Diamond-shaped sweet made from cashews.", a: "What is Kaju Katli?" }, { points: 200, q: "Deep-fried dough balls soaked in sugar syrup.", a: "What is Gulab Jamun?" }, { points: 300, q: "Orange, spiral-shaped sticky sweet.", a: "What is Jalebi?" }, { points: 400, q: "Fudge-like sweet often flavored with cardamom or pistachio.", a: "What is Barfi?" }, { points: 500, q: "Round sweet made from tiny gram flour droplets.", a: "What is Motichoor Ladoo?" } ] },
-            { category: "Bollywood", questions: [ { points: 100, q: "The ultimate 2001 Diwali family movie: Kabhi Khushi Kabhie ___", a: "What is Gham?" }, { points: 200, q: "This famous actor is known to host the biggest Diwali bashes.", a: "Who is Amitabh Bachchan (or SRK)?" }, { points: 300, q: "Iconic song 'Pairon Mein Bandhan Hai' is from this Yash Chopra film.", a: "What is Mohabbatein?" }, { points: 400, q: "Movie featuring the iconic song 'Bole Chudiyan'.", a: "What is K3G?" }, { points: 500, q: "This 2007 film directed by Farah Khan famously released on Diwali.", a: "What is Om Shanti Om?" } ] },
-            { category: "Decor & More", questions: [ { points: 100, q: "Small clay lamp filled with oil.", a: "What is a Diya?" }, { points: 200, q: "Colorful patterns created on the floor.", a: "What is Rangoli?" }, { points: 300, q: "Traditional flower used extensively for garlands.", a: "What is Marigold?" }, { points: 400, q: "Hanging decorative piece tied across the main doorway.", a: "What is a Toran?" }, { points: 500, q: "Paper lantern commonly hung outside windows.", a: "What is a Kandil?" } ] }
-        ];
-
-        let jTilesPlayed = 0;
-        let jActiveTile = null;
-
+        /* ================= JEOPARDY LOGIC ================= */
         function startJeopardy() {
             document.getElementById('viewJeopardyBoard').classList.remove('hidden');
-            const board = document.getElementById('jBoard');
-            const headers = document.getElementById('jCategories');
-            board.innerHTML = ''; headers.innerHTML = '';
-            jTilesPlayed = 0;
+            renderJeopardyBoard();
+            renderJeopardyHeader();
+        }
 
-            jeopardyDatabase.forEach(cat => {
-                const h = document.createElement('div');
-                h.className = 'j-header rounded-t-xl text-white';
-                h.innerText = cat.category;
-                headers.appendChild(h);
+        function renderJeopardyHeader() {
+            const container = document.getElementById('jeopardyTeamScoresHeader');
+            container.innerHTML = "";
+            teams.forEach(t => {
+                container.innerHTML += `
+                    <div class="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl flex items-center space-x-3">
+                        <span class="font-bold text-sm text-slate-300">${t.name}</span>
+                        <span class="font-black text-amber-400 text-lg font-mono">${t.score}</span>
+                    </div>`;
+            });
+        }
+
+        function renderJeopardyBoard() {
+            const grid = document.getElementById('jeopardyGridContainer');
+            grid.innerHTML = "";
+            
+            jeopardyDatabase.forEach(col => {
+                const header = document.createElement('div');
+                header.className = "j-header rounded-xl text-white flex items-center justify-center";
+                header.innerText = col.category;
+                grid.appendChild(header);
             });
 
             for(let r=0; r<5; r++) {
-                for(let c=0; c<5; c++) {
-                    const qData = jeopardyDatabase[c].questions[r];
-                    const tile = document.createElement('button');
-                    tile.className = 'j-card rounded-xl flex items-center justify-center';
-                    tile.innerText = qData.points;
-                    tile.onclick = () => openJeopardyTile(c, r, tile);
-                    board.appendChild(tile);
-                }
+                jeopardyDatabase.forEach((col, cIdx) => {
+                    const qData = col.questions[r];
+                    const tile = document.createElement('div');
+                    tile.className = `j-card rounded-xl h-24 flex items-center justify-center font-black text-2xl text-amber-400 ${qData.played ? 'played' : ''}`;
+                    tile.innerText = "$" + qData.points;
+                    if(!qData.played) {
+                        tile.onclick = () => openJeopardyTile(cIdx, r);
+                    }
+                    grid.appendChild(tile);
+                });
             }
-            updateJeopardyScores();
         }
 
-        function openJeopardyTile(catIndex, qIndex, tileElement) {
-            if (tileElement.classList.contains('played')) return;
-            jActiveTile = { catIndex, qIndex, el: tileElement };
-            const qData = jeopardyDatabase[catIndex].questions[qIndex];
-            document.getElementById('jActiveCategory').innerText = `${jeopardyDatabase[catIndex].category} for ${qData.points}`;
-            document.getElementById('jActiveQuestionText').innerText = qData.q;
+        function openJeopardyTile(cIdx, rIdx) {
+            const qData = jeopardyDatabase[cIdx].questions[rIdx];
+            jActiveTile = { cIdx, rIdx };
+            qData.played = true;
+            
+            document.getElementById('viewJeopardyBoard').classList.add('hidden');
             document.getElementById('viewJeopardyQuestion').classList.remove('hidden');
+            
+            document.getElementById('jActiveCategoryValue').innerText = `${jeopardyDatabase[cIdx].category} • $${qData.points}`;
+            document.getElementById('jActiveQuestionText').innerText = qData.q;
         }
 
-        function showJeopardyAnswer() {
-            const qData = jeopardyDatabase[jActiveTile.catIndex].questions[jActiveTile.qIndex];
-            document.getElementById('jActiveAnswerText').innerText = qData.a;
+        function revealJeopardyAnswer() {
+            const qData = jeopardyDatabase[jActiveTile.cIdx].questions[jActiveTile.rIdx];
             document.getElementById('viewJeopardyQuestion').classList.add('hidden');
             document.getElementById('viewJeopardyAnswer').classList.remove('hidden');
-
-            const awardDiv = document.getElementById('jAwardButtons');
-            awardDiv.innerHTML = '';
-            teams.forEach((t, index) => {
+            document.getElementById('jActiveAnswerText').innerText = qData.a;
+            
+            const awardContainer = document.getElementById('jAwardButtons');
+            awardContainer.innerHTML = "";
+            teams.forEach((t, tIdx) => {
                 const btn = document.createElement('button');
-                btn.className = `px-6 py-3 rounded-xl font-bold text-white shadow-lg ${t.color.bg}`;
-                btn.innerText = t.name;
-                btn.onclick = () => { teams[index].score += qData.points; closeJeopardyTile(); };
-                awardDiv.appendChild(btn);
+                btn.className = "bg-slate-900 border border-slate-700 hover:border-amber-500 px-6 py-3 rounded-xl font-bold text-white transition";
+                btn.innerText = `+ $${qData.points} to ${t.name}`;
+                btn.onclick = () => closeJeopardyTile(qData.points, tIdx);
+                awardContainer.appendChild(btn);
             });
         }
 
-        function closeJeopardyTile() {
-            if (jActiveTile) { jActiveTile.el.classList.add('played'); jTilesPlayed++; }
+        function closeJeopardyTile(points, teamIndex) {
+            if (points !== null && teamIndex !== undefined) {
+                teams[teamIndex].score += points;
+            }
             document.getElementById('viewJeopardyAnswer').classList.add('hidden');
-            updateJeopardyScores();
-            if (jTilesPlayed >= 25) setTimeout(endGame, 1000);
+            document.getElementById('viewJeopardyBoard').classList.remove('hidden');
+            renderJeopardyBoard();
+            renderJeopardyHeader();
+            
+            jTilesPlayed++;
+            if (jTilesPlayed >= 25) {
+                setTimeout(endGame, 1000);
+            }
         }
 
-        function updateJeopardyScores() {
-            const scoreContainer = document.getElementById('jTeamScores');
-            if(!scoreContainer) return;
-            scoreContainer.innerHTML = "";
-            teams.forEach((t) => {
-                scoreContainer.innerHTML += `<div class="bg-slate-900 border border-slate-700 p-3 rounded-xl flex flex-col items-center"><span class="text-[10px] text-slate-400">${t.name}</span><span class="font-black text-xl text-white">${t.score}</span></div>`;
-            });
-        }
-
-        const feudDatabase = [
-            { q: "Name a popular sweet distributed during Diwali.", answers: [ { text: "Kaju Katli", points: 35 }, { text: "Gulab Jamun", points: 25 }, { text: "Ladoo / Motichoor", points: 20 }, { text: "Jalebi", points: 12 }, { text: "Barfi", points: 8 } ] },
-            { q: "Name something people traditionally buy on Dhanteras.", answers: [ { text: "Gold Jewelry / Coins", points: 45 }, { text: "Silver Items", points: 25 }, { text: "Steel Utensils", points: 15 }, { text: "Electronics", points: 10 }, { text: "Broom (Jhadu)", points: 5 } ] },
-            { q: "Name a common Diwali decoration item.", answers: [ { text: "Diyas / Lamps", points: 40 }, { text: "Fairy Lights / Ladi", points: 25 }, { text: "Rangoli Colors", points: 15 }, { text: "Flower Garlands", points: 12 }, { text: "Toran Hangings", points: 8 } ] }
-        ];
-
-        let feudCurrentQuestion = 0;
-        let feudRoundPoints = 0;
-
+        /* ================= FAMILY FEUD LOGIC ================= */
         function startFeud() {
-            feudCurrentQuestion = 0;
             document.getElementById('viewFeudBoard').classList.remove('hidden');
             loadFeudQuestion();
         }
 
         function loadFeudQuestion() {
-            if (feudCurrentQuestion >= feudDatabase.length) return endGame();
+            if (feudCurrentQuestion >= feudDatabase.length) {
+                endGame();
+                return;
+            }
+
             const qData = feudDatabase[feudCurrentQuestion];
             feudRoundPoints = 0;
+            feudStrikes = 0;
+            feudAnswersRevealed = 0;
+
             document.getElementById('feudQuestionTracker').innerText = `Round ${feudCurrentQuestion + 1} of ${feudDatabase.length}`;
             document.getElementById('feudQuestionText').innerText = qData.q;
             document.getElementById('feudBankDisplay').innerText = "0";
             
+            for(let i=1; i<=3; i++) {
+                const s = document.getElementById(`strike_${i}`);
+                s.className = "w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50 cursor-pointer";
+            }
+
             const grid = document.getElementById('feudAnswersGrid');
             grid.innerHTML = "";
+            
             qData.answers.forEach((ans, index) => {
                 const tile = document.createElement('div');
                 tile.className = "feud-answer rounded-xl h-16 md:h-20 flex items-center justify-center shadow-lg relative cursor-pointer";
+                tile.id = `feudAns_${index}`;
                 tile.innerHTML = `
                     <div class="absolute inset-0 flex items-center justify-center font-black text-3xl text-slate-500" id="feudAnsFront_${index}">${index + 1}</div>
                     <div class="absolute inset-0 flex justify-between items-center px-6 opacity-0 font-bold text-lg md:text-2xl" id="feudAnsBack_${index}">
-                        <span>${ans.text}</span>
-                        <span class="font-black text-amber-900 bg-amber-500 px-3 py-1 rounded-lg">${ans.points}</span>
-                    </div>`;
-                tile.onclick = () => {
-                    tile.classList.add('revealed');
-                    document.getElementById(`feudAnsFront_${index}`).classList.add('opacity-0');
-                    document.getElementById(`feudAnsBack_${index}`).classList.remove('opacity-0');
-                    feudRoundPoints += ans.points;
-                    document.getElementById('feudBankDisplay').innerText = feudRoundPoints;
-                };
+                        <span class="truncate pr-4">${ans.text}</span>
+                        <span class="font-black text-amber-900 bg-amber-500/20 px-3 py-1 rounded-lg border border-amber-900/30">${ans.points}</span>
+                    </div>
+                `;
+                tile.onclick = () => revealFeudAnswer(index, ans.points, tile);
                 grid.appendChild(tile);
             });
+
             updateFeudScores();
         }
 
-        function toggleFeudStrike(index) {
-            const s = document.getElementById(`strike_${index}`);
-            const isActive = s.getAttribute('data-active') === 'true';
-            s.className = isActive 
-                ? 'w-12 h-12 rounded-xl bg-slate-900 border-2 border-slate-700 flex items-center justify-center text-3xl font-black text-slate-800 opacity-50'
-                : 'w-12 h-12 rounded-xl bg-slate-900 border-2 border-red-500 flex items-center justify-center text-3xl font-black text-red-500 opacity-100';
-            s.setAttribute('data-active', !isActive);
+        function revealFeudAnswer(index, points, tileElement) {
+            if (tileElement.classList.contains('revealed')) return;
+            tileElement.classList.add('revealed');
+            document.getElementById(`feudAnsFront_${index}`).classList.add('opacity-0');
+            document.getElementById(`feudAnsBack_${index}`).classList.remove('opacity-0');
+            feudRoundPoints += points;
+            document.getElementById('feudBankDisplay').innerText = feudRoundPoints;
+            feudAnswersRevealed++;
+        }
+
+        function toggleStrike(num) {
+            const s = document.getElementById(`strike_${num}`);
+            if (s.classList.contains('text-slate-800')) {
+                s.classList.remove('text-slate-800', 'border-slate-700', 'opacity-50');
+                s.classList.add('text-red-500', 'border-red-500', 'opacity-100');
+            } else {
+                s.classList.remove('text-red-500', 'border-red-500', 'opacity-100');
+                s.classList.add('text-slate-800', 'border-slate-700', 'opacity-50');
+            }
         }
 
         function triggerFeudStrike() {
+            if (feudStrikes < 3) {
+                feudStrikes++;
+                toggleStrike(feudStrikes);
+            }
             const overlay = document.getElementById('giantStrikeOverlay');
+            const giantText = document.getElementById('giantStrikeText');
             overlay.classList.remove('hidden');
-            setTimeout(() => overlay.classList.add('hidden'), 1000);
+            giantText.classList.remove('strike-anim');
+            void giantText.offsetWidth;
+            giantText.classList.add('strike-anim');
+            setTimeout(() => { overlay.classList.add('hidden'); }, 1200);
         }
 
         function updateFeudScores() {
             const scoreContainer = document.getElementById('feudTeamScores');
-            if(!scoreContainer) return;
             scoreContainer.innerHTML = "";
             teams.forEach((t, idx) => {
-                scoreContainer.innerHTML += `<button onclick="teams[${idx}].score += feudRoundPoints; feudRoundPoints=0; document.getElementById('feudBankDisplay').innerText='0'; updateFeudScores();" class="bg-slate-800 hover:bg-slate-700 p-3 rounded-xl flex flex-col items-center"><span class="text-[10px] text-slate-400">${t.name}</span><span class="font-black text-xl text-white">${t.score}</span></button>`;
+                let bgColors = ["bg-red-600", "bg-blue-600", "bg-emerald-600", "bg-amber-600", "bg-purple-600"];
+                const btn = document.createElement('button');
+                btn.className = `${bgColors[idx % bgColors.length]} bg-opacity-20 border border-opacity-50 hover:bg-opacity-40 p-3 rounded-xl flex flex-col items-center justify-center transition shadow-md`;
+                btn.innerHTML = `
+                    <span class="text-[10px] uppercase font-bold text-slate-300 truncate w-full mb-1">${t.name}</span>
+                    <span class="font-black text-xl text-white font-mono">${t.score}</span>
+                `;
+                btn.onclick = () => awardFeudPointsToTeam(idx);
+                scoreContainer.appendChild(btn);
             });
         }
 
-        function nextFeudQuestion() { feudCurrentQuestion++; loadFeudQuestion(); }
+        function awardFeudPointsToTeam(teamIndex) {
+            if (feudRoundPoints === 0 && feudAnswersRevealed === 0) return;
+            teams[teamIndex].score += feudRoundPoints;
+            feudRoundPoints = 0;
+            document.getElementById('feudBankDisplay').innerText = "0";
+            updateFeudScores();
+        }
+
+        function nextFeudQuestion() {
+            feudCurrentQuestion++;
+            loadFeudQuestion();
+        }
+
+        function endGame() {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById('viewPodium').classList.remove('hidden');
+            document.getElementById('gameStatusIndicator').classList.add('hidden');
+
+            const sorted = [...teams].sort((a,b) => b.score - a.score);
+            const list = document.getElementById('podiumList');
+            list.innerHTML = "";
+            sorted.forEach((t, idx) => {
+                let medals = ["🥇", "🥈", "🥉", "🏅", "🏅"];
+                list.innerHTML += `
+                    <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex justify-between items-center shadow-xl">
+                        <div class="flex items-center space-x-4">
+                            <span class="text-3xl">${medals[idx]}</span>
+                            <span class="font-extrabold text-white text-xl">${t.name}</span>
+                        </div>
+                        <span class="font-black text-3xl text-amber-400 font-mono">${t.score} PTS</span>
+                    </div>`;
+            });
+            pushHostStateToCloud('end_game');
+        }
+
+        /* ================= CLOUD SYNC LOGIC ================= */
+        function pushHostStateToCloud(status = 'lobby', extra = {}) {
+            if (window.fb && window.fb.saveGameState) {
+                window.fb.saveGameState(gamePinStr, {
+                    gamePin: gamePinStr,
+                    gameMode,
+                    teams,
+                    status,
+                    extra
+                });
+            }
+        }
+
+        function handleHostCloudSync(data) {
+            if (!data) return;
+            if (data.teams) {
+                // Merge player submissions / joins
+                data.teams.forEach(st => {
+                    const existing = teams.find(t => t.id === st.id);
+                    if (existing) {
+                        existing.name = st.name;
+                        existing.connected = st.connected;
+                        if (st.latestAnswer !== undefined) {
+                            existing.latestAnswer = st.latestAnswer;
+                        }
+                    } else {
+                        teams.push(st);
+                    }
+                });
+                renderLobbyTeams();
+            }
+        }
+
+        function handlePlayerCloudSync(data) {
+            if (!data) return;
+            
+            if (data.status === 'reset_game') {
+                playerLeaveGame();
+                return;
+            }
+            
+            const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
+            if (teamId && data.teams) {
+                const found = data.teams.find(t => t.id === teamId);
+                if (!found) {
+                    alert("You have been removed from the game by the host.");
+                    playerLeaveGame();
+                    return;
+                }
+            }
+
+            if (data.status === 'kahoot_q') {
+                document.getElementById('viewPlayerWaiting').classList.add('hidden');
+                document.getElementById('viewPlayerKahootControls').classList.remove('hidden');
+            } else if (data.status === 'kahoot_feedback') {
+                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
+                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+                document.getElementById('playerStatusTitle').innerText = "Round Finished";
+                document.getElementById('playerStatusSubtitle').innerText = "Check the host screen for scores!";
+            } else if (data.status === 'end_game') {
+                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
+                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+                document.getElementById('playerStatusTitle').innerText = "Game Over!";
+                document.getElementById('playerStatusSubtitle').innerText = "Check final standings on the big screen!";
+            }
+        }
+
+        function playerJoinGame() {
+            const name = document.getElementById('playerNameInput').value.trim();
+            if (!name) return;
+            
+            const teamId = 'pt_' + Math.random().toString(36).substr(2, 6);
+            localStorage.setItem('diwali_my_team_id_' + window.gamePinStr, teamId);
+            localStorage.setItem('diwali_player_name_' + window.gamePinStr, name);
+
+            // Fetch & update cloud
+            if (window.fb && window.fb.saveGameState) {
+                let colors = [
+                    { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" },
+                    { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" },
+                    { text: "text-amber-400", bg: "bg-amber-500", lightBg: "bg-amber-950/20", lightBorder: "border-amber-900/40" },
+                    { text: "text-emerald-400", bg: "bg-emerald-500", lightBg: "bg-emerald-950/20", lightBorder: "border-emerald-900/40" }
+                ];
+                teams.push({ id: teamId, name: name, score: 0, color: colors[teams.length % colors.length], connected: true });
+                pushHostStateToCloud('lobby');
+            }
+
+            document.getElementById('viewPlayerJoin').classList.add('hidden');
+            document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+            document.getElementById('playerActiveTeamBadge').innerText = name;
+        }
+
+        function playerLeaveGame() {
+            const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
+            if (teamId) {
+                teams = teams.filter(t => t.id !== teamId);
+                pushHostStateToCloud('lobby');
+            }
+            localStorage.removeItem('diwali_my_team_id_' + window.gamePinStr);
+            localStorage.removeItem('diwali_player_name_' + window.gamePinStr);
+            
+            document.getElementById('viewPlayerWaiting').classList.add('hidden');
+            document.getElementById('viewPlayerKahootControls').classList.add('hidden');
+            document.getElementById('viewPlayerJoin').classList.remove('hidden');
+            document.getElementById('playerNameInput').value = '';
+        }
+
+        function playerSubmitAnswer(index) {
+            document.getElementById('viewPlayerKahootControls').classList.add('hidden');
+            document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+            document.getElementById('playerStatusTitle').innerText = "Answer Submitted!";
+            document.getElementById('playerStatusSubtitle').innerText = "Waiting for round results...";
+            
+            const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
+            const t = teams.find(x => x.id === teamId);
+            if (t) {
+                t.latestAnswer = index;
+                // Award points for correct answer simulation
+                if (index === kahootDatabase[currentQuestionIndex].correct) {
+                    t.score += 1000;
+                }
+                pushHostStateToCloud('kahoot_q');
+            }
+        }
     </script>
 </body>
 </html>
