@@ -379,59 +379,7 @@
 
     <!-- SCRIPTS & FIREBASE CLOUD SYNC -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global Firebase handles
-        let db, auth, currentUser;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'diwali-multiplayer-hub';
-
-        async function initFirebase() {
-            try {
-                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                    const firebaseConfig = JSON.parse(__firebase_config);
-                    const app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
-
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                    currentUser = auth.currentUser;
-                }
-            } catch (e) {
-                console.warn("Firebase initialization fallback active:", e);
-            }
-        }
-        initFirebase();
-
-        // Make firebase tools accessible globally
-        window.fb = {
-            async saveGameState(pin, stateData) {
-                if (!db) return;
-                try {
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'game_' + pin);
-                    await setDoc(ref, { ...stateData, updatedAt: Date.now() });
-                } catch(e) { console.error("Cloud save error:", e); }
-            },
-            listenGameState(pin, callback) {
-                if (!db) return () => {};
-                try {
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'game_' + pin);
-                    return onSnapshot(ref, (docSnap) => {
-                        if (docSnap.exists()) {
-                            callback(docSnap.data());
-                        }
-                    }, (err) => { console.error("Cloud listener error:", err); });
-                } catch(e) { return () => {}; }
-            }
-        };
-    </script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script>
         // KAHOOT QUESTIONS
         const kahootDatabase = [
@@ -552,7 +500,7 @@
 
         // GLOBAL APP STATE
         let gameMode = 'none'; // 'kahoot', 'jeopardy', 'feud'
-        let gamePinStr = "849201";
+        let gamePinStr = Math.floor(100000 + Math.random() * 900000).toString();
         let teams = [
             { id: "t1", name: "Royal Rangolis", score: 0, color: { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" }, connected: true },
             { id: "t2", name: "Diva Dynamos", score: 0, color: { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" }, connected: true },
@@ -598,12 +546,7 @@
                     document.getElementById('playerActiveTeamBadge').innerText = savedTeamName;
                 }
                 
-                // Start listening to Firebase cloud state for this PIN
-                setTimeout(() => {
-                    if (window.fb && window.fb.listenGameState) {
-                        window.fb.listenGameState(pinParam, handlePlayerCloudSync);
-                    }
-                }, 1000);
+                if (savedTeamId && savedTeamName) autoRejoin();
             } else {
                 const hostLoggedIn = sessionStorage.getItem('diwali_host_logged_in');
                 if (hostLoggedIn === 'true') {
@@ -634,12 +577,7 @@
             document.getElementById('hostPortalView').classList.remove('hidden');
             goToLanding();
             
-            // Listen to cloud state as host to receive player joins/answers
-            setTimeout(() => {
-                if (window.fb && window.fb.listenGameState) {
-                    window.fb.listenGameState(gamePinStr, handleHostCloudSync);
-                }
-            }, 1000);
+            startHostPeer();
         }
 
         function checkHostAuthOrLanding() {
@@ -801,7 +739,7 @@
             currentQuestionIndex = 0;
             renderLobbyTeams();
             initQRCode();
-            pushHostStateToCloud('reset_game');
+            pushHostStateToCloud('reset_game'); lastStatus = 'lobby'; setTimeout(startHostPeer, 300);
         }
 
         function startGame() {
@@ -1110,107 +1048,166 @@
             pushHostStateToCloud('end_game');
         }
 
-        /* ================= CLOUD SYNC LOGIC ================= */
-        function pushHostStateToCloud(status = 'lobby', extra = {}) {
-            if (window.fb && window.fb.saveGameState) {
-                window.fb.saveGameState(gamePinStr, {
-                    gamePin: gamePinStr,
-                    gameMode,
-                    teams,
-                    status,
-                    extra
-                });
-            }
-        }
+        /* ================= PEERJS SYNC LOGIC (no backend needed) ================= */
+        // Host is the single source of truth. Phones connect straight to the host via WebRTC.
+        let hostPeer = null, playerPeer = null, playerConn = null;
+        let hostConns = {};            // teamId -> connection
+        let lastStatus = 'lobby', lastExtra = {};
+        const peerIdFor = pin => 'diwali-clash-' + pin;
+        const TEAM_COLORS = [
+            { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" },
+            { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" },
+            { text: "text-amber-400", bg: "bg-amber-500", lightBg: "bg-amber-950/20", lightBorder: "border-amber-900/40" },
+            { text: "text-emerald-400", bg: "bg-emerald-500", lightBg: "bg-emerald-950/20", lightBorder: "border-emerald-900/40" },
+            { text: "text-purple-400", bg: "bg-purple-500", lightBg: "bg-purple-950/20", lightBorder: "border-purple-900/40" }
+        ];
 
-        function handleHostCloudSync(data) {
-            if (!data) return;
-            if (data.teams) {
-                // Merge player submissions / joins
-                data.teams.forEach(st => {
-                    const existing = teams.find(t => t.id === st.id);
-                    if (existing) {
-                        existing.name = st.name;
-                        existing.connected = st.connected;
-                        if (st.latestAnswer !== undefined) {
-                            existing.latestAnswer = st.latestAnswer;
-                        }
-                    } else {
-                        teams.push(st);
+        function startHostPeer() {
+            if (hostPeer) { try { hostPeer.destroy(); } catch(e){} }
+            hostConns = {};
+            const pin = gamePinStr;
+            hostPeer = new Peer(peerIdFor(pin));
+            hostPeer.on('error', e => {
+                console.warn('Host peer error', e);
+                if (e.type === 'unavailable-id') {      // PIN already taken -> pick a new one
+                    gamePinStr = Math.floor(100000 + Math.random() * 900000).toString();
+                    initQRCode(); startHostPeer();
+                }
+            });
+            hostPeer.on('connection', conn => {
+                conn.on('data', msg => handleHostMessage(conn, msg));
+                conn.on('close', () => {
+                    for (const id in hostConns) if (hostConns[id] === conn) {
+                        const t = teams.find(x => x.id === id);
+                        if (t) t.connected = false;
+                        delete hostConns[id];
+                        renderLobbyTeams();
                     }
                 });
+                conn.on('open', () => conn.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode }));
+            });
+        }
+
+        function handleHostMessage(conn, msg) {
+            if (msg.type === 'join') {
+                let t = teams.find(x => x.id === msg.teamId);
+                if (!t) {
+                    t = { id: msg.teamId, name: msg.name, score: 0, color: TEAM_COLORS[teams.length % TEAM_COLORS.length], connected: true, isPlayer: true };
+                    teams.push(t);
+                } else { t.name = msg.name; t.connected = true; }
+                hostConns[msg.teamId] = conn;
+                conn.send({ type: 'joined', teamId: t.id, name: t.name });
+                conn.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode });
+                renderLobbyTeams();
+            } else if (msg.type === 'answer') {
+                const t = teams.find(x => x.id === msg.teamId);
+                if (t && lastStatus === 'kahoot_q' && t.answeredQ !== currentQuestionIndex) {
+                    t.answeredQ = currentQuestionIndex;
+                    t.latestAnswer = msg.index;
+                    if (msg.index === kahootDatabase[currentQuestionIndex].correct) {
+                        t.score += 500 + Math.round(500 * Math.max(0, timeLeft) / 30);
+                    }
+                }
+            } else if (msg.type === 'leave') {
+                teams = teams.filter(x => x.id !== msg.teamId);
+                delete hostConns[msg.teamId];
                 renderLobbyTeams();
             }
         }
 
-        function handlePlayerCloudSync(data) {
-            if (!data) return;
-            
-            if (data.status === 'reset_game') {
-                playerLeaveGame();
+        function pushHostStateToCloud(status, extra) {
+            if (status) lastStatus = status;
+            if (extra !== undefined) lastExtra = extra;
+            for (const id in hostConns) {
+                const c = hostConns[id];
+                if (!teams.find(t => t.id === id)) {           // kicked
+                    try { c.send({ type: 'kicked' }); } catch(e){}
+                    delete hostConns[id]; continue;
+                }
+                try { c.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode }); } catch(e){}
+            }
+        }
+
+        function handleHostCloudSync() {}
+
+        /* ---------- PLAYER SIDE ---------- */
+        function connectPlayer(onReady) {
+            const pin = window.gamePinStr;
+            setPlayerStatus('Connecting to host…', 'Make sure the host screen is open.');
+            playerPeer = new Peer();
+            playerPeer.on('open', () => {
+                playerConn = playerPeer.connect(peerIdFor(pin), { reliable: true });
+                const timeout = setTimeout(() => {
+                    if (!playerConn.open) showJoinError("Couldn't reach the host. Check the PIN / that the host game is running, then try again.");
+                }, 12000);
+                playerConn.on('open', () => { clearTimeout(timeout); onReady && onReady(); });
+                playerConn.on('data', handlePlayerMessage);
+                playerConn.on('close', () => setPlayerStatus('Disconnected', 'Reconnecting…') || setTimeout(autoRejoin, 2000));
+            });
+            playerPeer.on('error', e => {
+                console.warn(e);
+                showJoinError(e.type === 'peer-unavailable' ? "Game not found. Ask the host to check the PIN." : "Connection problem: " + e.type);
+            });
+        }
+
+        function setPlayerStatus(t, s) {
+            document.getElementById('playerStatusTitle').innerText = t;
+            document.getElementById('playerStatusSubtitle').innerText = s;
+        }
+        function showJoinError(msg) {
+            document.getElementById('viewPlayerWaiting').classList.add('hidden');
+            document.getElementById('viewPlayerJoin').classList.remove('hidden');
+            alert(msg);
+        }
+
+        function handlePlayerMessage(msg) {
+            if (msg.type === 'kicked') {
+                alert("You have been removed from the game by the host.");
+                playerLeaveGame(true); return;
+            }
+            if (msg.type === 'joined') {
+                document.getElementById('playerActiveTeamBadge').innerText = msg.name;
+                setPlayerStatus("You're In!", "Waiting for the host to start the game...");
                 return;
             }
-            
-            const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
-            if (teamId && data.teams) {
-                const found = data.teams.find(t => t.id === teamId);
-                if (!found) {
-                    alert("You have been removed from the game by the host.");
-                    playerLeaveGame();
-                    return;
-                }
+            if (msg.type !== 'state') return;
+            if (msg.status === 'reset_game') { playerLeaveGame(true); return; }
+            const kc = document.getElementById('viewPlayerKahootControls'), wt = document.getElementById('viewPlayerWaiting');
+            if (msg.status === 'kahoot_q') {
+                wt.classList.add('hidden'); kc.classList.remove('hidden');
+            } else if (msg.status === 'kahoot_feedback') {
+                kc.classList.add('hidden'); wt.classList.remove('hidden');
+                setPlayerStatus("Round Finished", "Check the host screen for scores!");
+            } else if (msg.status === 'end_game') {
+                kc.classList.add('hidden'); wt.classList.remove('hidden');
+                setPlayerStatus("Game Over!", "Check final standings on the big screen!");
             }
+        }
 
-            if (data.status === 'kahoot_q') {
-                document.getElementById('viewPlayerWaiting').classList.add('hidden');
-                document.getElementById('viewPlayerKahootControls').classList.remove('hidden');
-            } else if (data.status === 'kahoot_feedback') {
-                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
-                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-                document.getElementById('playerStatusTitle').innerText = "Round Finished";
-                document.getElementById('playerStatusSubtitle').innerText = "Check the host screen for scores!";
-            } else if (data.status === 'end_game') {
-                document.getElementById('viewPlayerKahootControls').classList.add('hidden');
-                document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-                document.getElementById('playerStatusTitle').innerText = "Game Over!";
-                document.getElementById('playerStatusSubtitle').innerText = "Check final standings on the big screen!";
-            }
+        function autoRejoin() {
+            const id = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
+            const name = localStorage.getItem('diwali_player_name_' + window.gamePinStr);
+            if (id && name) connectPlayer(() => playerConn.send({ type: 'join', teamId: id, name }));
         }
 
         function playerJoinGame() {
             const name = document.getElementById('playerNameInput').value.trim();
             if (!name) return;
-            
-            const teamId = 'pt_' + Math.random().toString(36).substr(2, 6);
+            const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr) || ('pt_' + Math.random().toString(36).substr(2, 6));
             localStorage.setItem('diwali_my_team_id_' + window.gamePinStr, teamId);
             localStorage.setItem('diwali_player_name_' + window.gamePinStr, name);
-
-            // Fetch & update cloud
-            if (window.fb && window.fb.saveGameState) {
-                let colors = [
-                    { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" },
-                    { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" },
-                    { text: "text-amber-400", bg: "bg-amber-500", lightBg: "bg-amber-950/20", lightBorder: "border-amber-900/40" },
-                    { text: "text-emerald-400", bg: "bg-emerald-500", lightBg: "bg-emerald-950/20", lightBorder: "border-emerald-900/40" }
-                ];
-                teams.push({ id: teamId, name: name, score: 0, color: colors[teams.length % colors.length], connected: true });
-                pushHostStateToCloud('lobby');
-            }
-
             document.getElementById('viewPlayerJoin').classList.add('hidden');
             document.getElementById('viewPlayerWaiting').classList.remove('hidden');
             document.getElementById('playerActiveTeamBadge').innerText = name;
+            connectPlayer(() => playerConn.send({ type: 'join', teamId, name }));
         }
 
-        function playerLeaveGame() {
+        function playerLeaveGame(fromHost) {
             const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
-            if (teamId) {
-                teams = teams.filter(t => t.id !== teamId);
-                pushHostStateToCloud('lobby');
-            }
+            if (!fromHost && playerConn && playerConn.open) playerConn.send({ type: 'leave', teamId });
             localStorage.removeItem('diwali_my_team_id_' + window.gamePinStr);
             localStorage.removeItem('diwali_player_name_' + window.gamePinStr);
-            
+            try { playerConn && playerConn.close(); playerPeer && playerPeer.destroy(); } catch(e){}
             document.getElementById('viewPlayerWaiting').classList.add('hidden');
             document.getElementById('viewPlayerKahootControls').classList.add('hidden');
             document.getElementById('viewPlayerJoin').classList.remove('hidden');
@@ -1220,19 +1217,9 @@
         function playerSubmitAnswer(index) {
             document.getElementById('viewPlayerKahootControls').classList.add('hidden');
             document.getElementById('viewPlayerWaiting').classList.remove('hidden');
-            document.getElementById('playerStatusTitle').innerText = "Answer Submitted!";
-            document.getElementById('playerStatusSubtitle').innerText = "Waiting for round results...";
-            
+            setPlayerStatus("Answer Submitted!", "Waiting for round results...");
             const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
-            const t = teams.find(x => x.id === teamId);
-            if (t) {
-                t.latestAnswer = index;
-                // Award points for correct answer simulation
-                if (index === kahootDatabase[currentQuestionIndex].correct) {
-                    t.score += 1000;
-                }
-                pushHostStateToCloud('kahoot_q');
-            }
+            if (playerConn && playerConn.open) playerConn.send({ type: 'answer', teamId, index });
         }
     </script>
 </body>
