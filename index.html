@@ -10,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <!-- Canvas Confetti for celebrations -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <!-- PeerJS for Serverless Multiplayer -->
+    <!-- PeerJS for Multiplayer -->
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     
     <style>
@@ -217,7 +217,7 @@
                 <div id="qrCodePanel" class="lg:col-span-5 bg-slate-900/90 border border-slate-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden">
                     <h3 class="text-2xl font-bold mb-2 text-white">Join the Game!</h3>
                     <p class="text-slate-400 text-sm mb-2">Scan with any smartphone camera</p>
-                    <p class="text-xs text-amber-400/80 mb-4 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">💡 Make sure hosted online (e.g. GitHub Pages)</p>
+                    <p class="text-xs text-amber-400/80 mb-4 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">💡 Make sure hosted online (e.g. GitHub Pages / Netlify)</p>
                     <div class="bg-white p-4 rounded-2xl shadow-lg mb-6 cursor-pointer hover:scale-105 transition" id="qrcode" onclick="openJoinSimulation()"></div>
                     <div class="text-3xl font-black tracking-[0.2em] text-amber-500 mb-2">PIN: <span id="gamePin"></span></div>
                     <button onclick="openJoinSimulation()" class="mt-4 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-full transition border border-slate-600">Simulate Team Join</button>
@@ -446,9 +446,11 @@
         let editingTeamId = null;
         let isHost = true;
         let hostGameState = 'lobby';
+        let currentQuestionIndex = 0;
+        let timerInterval = null;
+        let timeLeft = 30;
 
         window.onload = () => {
-            // Check persistent Host Session
             const savedHostLogin = localStorage.getItem('diwali_host_logged_in');
             if (savedHostLogin === 'true') {
                 document.getElementById('viewHostLogin').classList.add('hidden');
@@ -459,19 +461,22 @@
                 document.getElementById('viewHostLogin').classList.add('hidden');
                 document.querySelector('header').classList.add('hidden');
                 
-                // Check persistent Player Session
                 const savedPlayerName = localStorage.getItem('diwali_player_name_' + pinParam);
                 if (savedPlayerName) {
                     document.getElementById('viewPlayerJoin').classList.add('hidden');
                     document.getElementById('viewPlayerWaiting').classList.remove('hidden');
                     document.getElementById('playerJoinedNameDisplay').innerText = savedPlayerName;
-                    connectPlayerPeer(savedPlayerName, true);
+                    connectPlayerSync(savedPlayerName);
                 } else {
                     document.getElementById('viewPlayerJoin').classList.remove('hidden');
                 }
                 document.getElementById('playerDisplayPin').innerText = pinParam;
                 document.getElementById('viewLanding').classList.add('hidden');
                 setInterval(() => { if (timeLeft > 0) timeLeft--; }, 1000);
+            } else {
+                // Host default teams init
+                changeTeamCount(4);
+                setInterval(pollHostSync, 1000);
             }
         };
 
@@ -486,142 +491,111 @@
             }
         }
 
-        let peer = null;
-        let peerConnections = [];
-        let hostConn = null;
-
         function broadcastState(newState) {
             hostGameState = newState;
-            peerConnections.forEach(c => { if(c.open) c.send({type: 'state', state: newState}); });
+            const syncPayload = {
+                state: newState,
+                teams: teams,
+                currentQ: currentQuestionIndex,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('diwali_sync_' + window.gamePinStr, JSON.stringify(syncPayload));
         }
 
-        function hostCreateSession() {
-            peer = new Peer('diwali-trivia-' + window.gamePinStr, {
-                config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }]}
-            });
-            
-            peer.on('open', (id) => console.log('Host Connected:', id));
-            peer.on('error', (err) => console.warn('Peer warning:', err));
-
-            peer.on('connection', (conn) => {
-                conn.on('data', (data) => {
-                    if (data.type === 'join') {
-                        // Check if team already exists from previous session refresh
-                        let existingTeam = teams.find(t => t.name === data.name);
-                        if (existingTeam) {
-                            existingTeam.id = conn.peer;
-                            existingTeam.connected = true;
-                            existingTeam.conn = conn;
-                        } else {
-                            const newTeam = {
-                                id: conn.peer,
-                                name: data.name,
-                                score: 0,
-                                hasAnswered: false,
-                                lastPoints: 0,
-                                lastAnswerCorrect: false,
-                                color: teamColors[teams.length % teamColors.length],
-                                connected: true,
-                                conn: conn
-                            };
-                            teams.push(newTeam);
-                        }
-                        if (!peerConnections.includes(conn)) peerConnections.push(conn);
-                        renderLobbyTeams();
-                        conn.send({type: 'state', state: hostGameState});
-                    } else if (data.type === 'answer') {
-                        const team = teams.find(t => t.id === conn.peer);
-                        if (team) {
-                            team.hasAnswered = true;
-                            team.answerIndex = data.index;
-                            team.timeLeftOnAnswer = data.timeLeft;
+        function pollHostSync() {
+            if (!isHost || gameMode !== 'kahoot') return;
+            const raw = localStorage.getItem('diwali_sync_' + window.gamePinStr);
+            if (raw) {
+                try {
+                    const data = JSON.parse(raw);
+                    if (data.teams) {
+                        let updated = false;
+                        data.teams.forEach(pt => {
+                            let existing = teams.find(t => t.id === pt.id);
+                            if (existing) {
+                                if (pt.hasAnswered && !existing.hasAnswered) {
+                                    existing.hasAnswered = true;
+                                    existing.answerIndex = pt.answerIndex;
+                                    existing.timeLeftOnAnswer = pt.timeLeftOnAnswer;
+                                    updated = true;
+                                }
+                            } else {
+                                teams.push(pt);
+                                updated = true;
+                            }
+                        });
+                        if (updated) {
+                            renderLobbyTeams();
                             checkAllAnswered();
                         }
-                    } else if (data.type === 'leave') {
-                        const team = teams.find(t => t.id === conn.peer);
-                        if (team) {
-                            team.connected = false;
-                            renderLobbyTeams();
-                        }
                     }
-                });
-                
-                conn.on('close', () => {
-                    const team = teams.find(t => t.id === conn.peer);
-                    if(team) { team.connected = false; renderLobbyTeams(); }
-                });
-            });
+                } catch(e) {}
+            }
         }
 
         function playerSubmitJoin() {
             const name = document.getElementById('playerNameInput').value.trim();
             if (!name) return;
             localStorage.setItem('diwali_player_name_' + pinParam, name);
-            connectPlayerPeer(name, false);
+            connectPlayerSync(name);
         }
 
-        function connectPlayerPeer(name, isReconnect) {
-            const btn = document.querySelector('#viewPlayerJoin button');
-            if (btn && !isReconnect) {
-                btn.innerText = "CONNECTING...";
-                btn.disabled = true;
-            }
+        function connectPlayerSync(name) {
+            document.getElementById('viewPlayerJoin').classList.add('hidden');
+            document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+            document.getElementById('playerJoinedNameDisplay').innerText = name;
 
-            peer = new Peer({
-                config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }]}
-            });
+            const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+            localStorage.setItem('diwali_my_player_id_' + pinParam, playerId);
+
+            let raw = localStorage.getItem('diwali_sync_' + pinParam);
+            let data = raw ? JSON.parse(raw) : { state: 'lobby', teams: [] };
             
-            peer.on('open', (id) => {
-                hostConn = peer.connect('diwali-trivia-' + pinParam);
-                
-                hostConn.on('open', () => {
-                    hostConn.send({type: 'join', name: name});
-                    document.getElementById('playerJoinedNameDisplay').innerText = name;
-                    document.getElementById('viewPlayerJoin').classList.add('hidden');
-                    document.getElementById('viewPlayerWaiting').classList.remove('hidden');
+            let existing = data.teams.find(t => t.name === name);
+            if (!existing) {
+                data.teams.push({
+                    id: playerId,
+                    name: name,
+                    score: 0,
+                    hasAnswered: false,
+                    answerIndex: -1,
+                    connected: true,
+                    color: teamColors[data.teams.length % teamColors.length]
                 });
+            } else {
+                existing.connected = true;
+            }
+            localStorage.setItem('diwali_sync_' + pinParam, JSON.stringify(data));
 
-                hostConn.on('data', (data) => {
-                    if(data.type === 'state') handlePlayerStateChange(data);
-                });
-
-                hostConn.on('close', () => {
-                    document.getElementById('playerSpinner').classList.add('hidden');
-                    document.getElementById('playerStatusTitle').innerText = "Disconnected";
-                    document.getElementById('playerStatusSubtitle').innerText = "Host connection lost.";
-                });
-            });
-
-            peer.on('error', (err) => {
-                console.error('Player connection error:', err);
-                if (btn) { btn.innerText = "JOIN NOW"; btn.disabled = false; }
-                if (!isReconnect) alert("Could not connect to host. Make sure the Game PIN is correct and the host has started the lobby.");
-            });
+            setInterval(() => {
+                let currentSync = localStorage.getItem('diwali_sync_' + pinParam);
+                if (currentSync) {
+                    try {
+                        let parsed = JSON.parse(currentSync);
+                        handlePlayerStateChange(parsed.state);
+                    } catch(e){}
+                }
+            }, 800);
         }
 
         function playerLeaveGame() {
-            if (hostConn && hostConn.open) {
-                hostConn.send({type: 'leave'});
-            }
             localStorage.removeItem('diwali_player_name_' + pinParam);
             document.getElementById('viewPlayerWaiting').classList.add('hidden');
             document.getElementById('viewPlayerJoin').classList.remove('hidden');
             document.getElementById('playerNameInput').value = '';
-            const btn = document.querySelector('#viewPlayerJoin button');
-            if(btn) { btn.innerText = "JOIN NOW"; btn.disabled = false; }
         }
 
-        function handlePlayerStateChange(data) {
-            if (data.state === 'kahoot_q') {
+        function handlePlayerStateChange(state) {
+            if (state === 'kahoot_q') {
                 document.getElementById('viewPlayerWaiting').classList.add('hidden');
                 document.getElementById('viewPlayerKahootControls').classList.remove('hidden');
                 timeLeft = 30;
-            } else if (data.state === 'kahoot_feedback') {
+            } else if (state === 'kahoot_feedback') {
                 document.getElementById('viewPlayerKahootControls').classList.add('hidden');
                 document.getElementById('viewPlayerWaiting').classList.remove('hidden');
                 document.getElementById('playerStatusTitle').innerText = "Round Over";
                 document.getElementById('playerStatusSubtitle').innerText = "Check the main screen!";
-            } else if (data.state === 'end_game') {
+            } else if (state === 'end_game') {
                 document.getElementById('viewPlayerKahootControls').classList.add('hidden');
                 document.getElementById('viewPlayerWaiting').classList.remove('hidden');
                 document.getElementById('playerStatusTitle').innerText = "Game Over!";
@@ -635,8 +609,17 @@
             document.getElementById('playerStatusTitle').innerText = "Answer Sent!";
             document.getElementById('playerStatusSubtitle').innerText = "Waiting for time to finish...";
             
-            if (hostConn && hostConn.open) {
-                hostConn.send({type: 'answer', index: index, timeLeft: timeLeft});
+            const playerId = localStorage.getItem('diwali_my_player_id_' + pinParam);
+            let raw = localStorage.getItem('diwali_sync_' + pinParam);
+            if (raw) {
+                let data = JSON.parse(raw);
+                let t = data.teams.find(x => x.id === playerId);
+                if (t) {
+                    t.hasAnswered = true;
+                    t.answerIndex = index;
+                    t.timeLeftOnAnswer = timeLeft;
+                    localStorage.setItem('diwali_sync_' + pinParam, JSON.stringify(data));
+                }
             }
         }
 
@@ -665,7 +648,11 @@
             if(mode === 'kahoot') {
                 selectEl.parentElement.classList.add('hidden');
                 teams = [];
-                hostCreateSession();
+                for(let i=0; i<4; i++) {
+                    teams.push({ id: (i+1).toString(), name: `Team ${i + 1}`, score: 0, connected: false, color: teamColors[i % teamColors.length] });
+                }
+                renderLobbyTeams();
+                broadcastState('lobby');
             } else {
                 selectEl.parentElement.classList.remove('hidden');
                 let maxLimit = mode === 'jeopardy' ? 5 : 3;
@@ -714,6 +701,7 @@
 
         function renderLobbyTeams() {
             const container = document.getElementById('teamList');
+            if(!container) return;
             container.innerHTML = '';
             teams.forEach((t) => {
                 const isConn = t.connected || gameMode === 'kahoot';
@@ -762,7 +750,7 @@
                 currentQuestionIndex = 0;
                 document.getElementById('gameStatusIndicator').classList.remove('hidden');
                 document.getElementById('gameStatusIndicator').classList.add('flex');
-                if (isHost) broadcastState('kahoot_q');
+                broadcastState('kahoot_q');
                 loadKahootQuestion();
             } else if (gameMode === 'jeopardy') {
                 startJeopardy();
@@ -770,10 +758,6 @@
                 startFeud();
             }
         }
-
-        let currentQuestionIndex = 0;
-        let timerInterval;
-        let timeLeft = 30;
 
         const kahootQuestions = [
             { q: "What does the word 'Deepavali' literally translate to?", options: ["Row of lights", "Festival of colors", "Victory of good", "Arrival of winter"], correct: 0, img: "https://placehold.co/600x400/1e293b/fbbf24?text=Deepavali+Meaning" },
@@ -967,6 +951,7 @@
 
         function updateJeopardyScores() {
             const scoreContainer = document.getElementById('jTeamScores');
+            if(!scoreContainer) return;
             scoreContainer.innerHTML = "";
             teams.forEach((t) => {
                 scoreContainer.innerHTML += `<div class="bg-slate-900 border border-slate-700 p-3 rounded-xl flex flex-col items-center"><span class="text-[10px] text-slate-400">${t.name}</span><span class="font-black text-xl text-white">${t.score}</span></div>`;
@@ -1036,6 +1021,7 @@
 
         function updateFeudScores() {
             const scoreContainer = document.getElementById('feudTeamScores');
+            if(!scoreContainer) return;
             scoreContainer.innerHTML = "";
             teams.forEach((t, idx) => {
                 scoreContainer.innerHTML += `<button onclick="teams[${idx}].score += feudRoundPoints; feudRoundPoints=0; document.getElementById('feudBankDisplay').innerText='0'; updateFeudScores();" class="bg-slate-800 hover:bg-slate-700 p-3 rounded-xl flex flex-col items-center"><span class="text-[10px] text-slate-400">${t.name}</span><span class="font-black text-xl text-white">${t.score}</span></button>`;
