@@ -175,6 +175,7 @@
                     <div class="bg-white p-4 rounded-2xl shadow-inner mb-6" id="qrcodeContainer">
                         <!-- QR Code Canvas / SVG -->
                     </div>
+                    <p id="netStatus" class="text-xs font-bold mb-3 text-slate-500">Connecting to game server...</p>
                     <p class="text-xs text-slate-400 mb-4">Scan QR code with your phone camera or open player link to join instantly as a team!</p>
                     <button onclick="openPlayerTab()" class="text-xs text-amber-400 hover:text-amber-300 underline font-semibold">Open Player Join Tab ➔</button>
                 </div>
@@ -379,7 +380,7 @@
 
     <!-- SCRIPTS & FIREBASE CLOUD SYNC -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
     <script>
         // KAHOOT QUESTIONS
         const kahootDatabase = [
@@ -655,7 +656,7 @@
             const container = document.getElementById('qrcodeContainer');
             container.innerHTML = "";
             
-            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr;
+            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr + "&b=" + brokerIdx;
             
             try {
                 new QRCode(container, {
@@ -672,7 +673,7 @@
         }
 
         function openPlayerTab() {
-            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr;
+            let joinUrl = window.location.origin + window.location.pathname + "?pin=" + gamePinStr + "&b=" + brokerIdx;
             window.open(joinUrl, '_blank');
         }
 
@@ -734,12 +735,17 @@
         }
 
         function restartKahootGame() {
+            pushHostStateToCloud('reset_game');      // old phones reset on the old PIN
+            const oldClient = hostClient;
+            setTimeout(() => { try { oldClient && oldClient.end(true); } catch (e) {} }, 500);
+            hostClient = null; hostPlayers = {};
             gamePinStr = Math.floor(100000 + Math.random() * 900000).toString();
             teams = [];
             currentQuestionIndex = 0;
+            lastStatus = 'lobby'; lastExtra = {};
             renderLobbyTeams();
             initQRCode();
-            pushHostStateToCloud('reset_game'); lastStatus = 'lobby'; setTimeout(startHostPeer, 300);
+            startHostPeer();
         }
 
         function startGame() {
@@ -1048,12 +1054,13 @@
             pushHostStateToCloud('end_game');
         }
 
-        /* ================= PEERJS SYNC LOGIC (no backend needed) ================= */
-        // Host is the single source of truth. Phones connect straight to the host via WebRTC.
-        let hostPeer = null, playerPeer = null, playerConn = null;
-        let hostConns = {};            // teamId -> connection
+        /* ================= MQTT SYNC LOGIC (WebSocket relay, works through firewalls) ================= */
+        // Host is the single source of truth. Phones talk to the host through a free public MQTT broker.
+        const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081'];
+        let brokerIdx = 0, hostClient = null, playerClient = null;
+        let hostPlayers = {};          // teamId -> true (players who joined from phones)
         let lastStatus = 'lobby', lastExtra = {};
-        const peerIdFor = pin => 'diwali-clash-' + pin;
+        const topicBase = pin => 'diwaliclash26/' + pin;
         const TEAM_COLORS = [
             { text: "text-red-400", bg: "bg-red-500", lightBg: "bg-red-950/20", lightBorder: "border-red-900/40" },
             { text: "text-blue-400", bg: "bg-blue-500", lightBg: "bg-blue-950/20", lightBorder: "border-blue-900/40" },
@@ -1062,42 +1069,64 @@
             { text: "text-purple-400", bg: "bg-purple-500", lightBg: "bg-purple-950/20", lightBorder: "border-purple-900/40" }
         ];
 
-        function startHostPeer() {
-            if (hostPeer) { try { hostPeer.destroy(); } catch(e){} }
-            hostConns = {};
-            const pin = gamePinStr;
-            hostPeer = new Peer(peerIdFor(pin));
-            hostPeer.on('error', e => {
-                console.warn('Host peer error', e);
-                if (e.type === 'unavailable-id') {      // PIN already taken -> pick a new one
-                    gamePinStr = Math.floor(100000 + Math.random() * 900000).toString();
-                    initQRCode(); startHostPeer();
-                }
-            });
-            hostPeer.on('connection', conn => {
-                conn.on('data', msg => handleHostMessage(conn, msg));
-                conn.on('close', () => {
-                    for (const id in hostConns) if (hostConns[id] === conn) {
-                        const t = teams.find(x => x.id === id);
-                        if (t) t.connected = false;
-                        delete hostConns[id];
-                        renderLobbyTeams();
-                    }
-                });
-                conn.on('open', () => conn.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode }));
-            });
+        function showHostNet(ok, msg) {
+            const el = document.getElementById('netStatus');
+            if (!el) return;
+            el.innerText = msg;
+            el.className = 'text-xs font-bold mb-3 ' + (ok ? 'text-emerald-400' : 'text-red-400');
         }
 
-        function handleHostMessage(conn, msg) {
+        function mqttPub(client, topic, obj, retain) {
+            if (client && client.connected) {
+                client.publish(topic, JSON.stringify(obj), { qos: 0, retain: !!retain });
+            }
+        }
+
+        /* ---------- HOST SIDE ---------- */
+        function startHostPeer(tryIdx) {
+            tryIdx = tryIdx || 0;
+            if (hostClient) { try { hostClient.end(true); } catch (e) {} hostClient = null; }
+            if (typeof mqtt === 'undefined') { showHostNet(false, 'Could not load connection library. Check internet.'); return; }
+            if (tryIdx >= BROKERS.length) { showHostNet(false, 'Could not reach any game server. Check internet / try mobile hotspot.'); return; }
+
+            const pin = gamePinStr;
+            const c = mqtt.connect(BROKERS[tryIdx], {
+                clientId: 'dchost_' + pin + '_' + Math.random().toString(16).slice(2, 8),
+                reconnectPeriod: 3000, connectTimeout: 8000, clean: true
+            });
+            let ok = false;
+            showHostNet(false, 'Connecting to game server...');
+            const failTimer = setTimeout(() => {
+                if (!ok) { try { c.end(true); } catch (e) {} startHostPeer(tryIdx + 1); }
+            }, 9000);
+
+            c.on('connect', () => {
+                if (!ok) {
+                    ok = true; clearTimeout(failTimer);
+                    brokerIdx = tryIdx; hostClient = c;
+                    initQRCode();                       // QR now carries the broker index
+                }
+                c.subscribe(topicBase(pin) + '/up', { qos: 0 });
+                showHostNet(true, 'Game server connected. Teams can join now');
+                pushHostStateToCloud();
+            });
+            c.on('message', (topic, buf) => {
+                try { handleHostMessage(JSON.parse(buf.toString())); } catch (e) { console.warn(e); }
+            });
+            c.on('offline', () => { if (ok) showHostNet(false, 'Connection lost. Reconnecting...'); });
+            c.on('error', e => console.warn('MQTT host error', e));
+        }
+
+        function handleHostMessage(msg) {
+            const base = topicBase(gamePinStr);
             if (msg.type === 'join') {
                 let t = teams.find(x => x.id === msg.teamId);
                 if (!t) {
                     t = { id: msg.teamId, name: msg.name, score: 0, color: TEAM_COLORS[teams.length % TEAM_COLORS.length], connected: true, isPlayer: true };
                     teams.push(t);
                 } else { t.name = msg.name; t.connected = true; }
-                hostConns[msg.teamId] = conn;
-                conn.send({ type: 'joined', teamId: t.id, name: t.name });
-                conn.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode });
+                hostPlayers[msg.teamId] = true;
+                mqttPub(hostClient, base + '/to/' + msg.teamId, { type: 'joined', teamId: t.id, name: t.name });
                 renderLobbyTeams();
             } else if (msg.type === 'answer') {
                 const t = teams.find(x => x.id === msg.teamId);
@@ -1110,52 +1139,86 @@
                 }
             } else if (msg.type === 'leave') {
                 teams = teams.filter(x => x.id !== msg.teamId);
-                delete hostConns[msg.teamId];
+                delete hostPlayers[msg.teamId];
                 renderLobbyTeams();
+            } else if (msg.type === 'drop') {
+                const t = teams.find(x => x.id === msg.teamId);
+                if (t) { t.connected = false; renderLobbyTeams(); }
             }
         }
 
         function pushHostStateToCloud(status, extra) {
             if (status) lastStatus = status;
             if (extra !== undefined) lastExtra = extra;
-            for (const id in hostConns) {
-                const c = hostConns[id];
-                if (!teams.find(t => t.id === id)) {           // kicked
-                    try { c.send({ type: 'kicked' }); } catch(e){}
-                    delete hostConns[id]; continue;
+            if (!hostClient) return;
+            const base = topicBase(gamePinStr);
+            for (const id in hostPlayers) {                         // tell kicked teams
+                if (!teams.find(t => t.id === id)) {
+                    mqttPub(hostClient, base + '/to/' + id, { type: 'kicked' });
+                    delete hostPlayers[id];
                 }
-                try { c.send({ type: 'state', status: lastStatus, extra: lastExtra, gameMode }); } catch(e){}
             }
+            mqttPub(hostClient, base + '/state', { type: 'state', status: lastStatus, extra: lastExtra, gameMode: gameMode, ts: Date.now() }, true);
         }
 
         function handleHostCloudSync() {}
 
         /* ---------- PLAYER SIDE ---------- */
-        function connectPlayer(onReady) {
+        let playerJoined = false, playerLastState = null, playerJoinTimer = null, playerJoinRetry = null;
+
+        function connectPlayer(teamId, name) {
             const pin = window.gamePinStr;
-            setPlayerStatus('Connecting to host...', 'Make sure the host screen is open.');
-            playerPeer = new Peer();
-            playerPeer.on('open', () => {
-                playerConn = playerPeer.connect(peerIdFor(pin), { reliable: true });
-                const timeout = setTimeout(() => {
-                    if (!playerConn.open) showJoinError("Couldn't reach the host. Check the PIN / that the host game is running, then try again.");
-                }, 12000);
-                playerConn.on('open', () => { clearTimeout(timeout); onReady && onReady(); });
-                playerConn.on('data', handlePlayerMessage);
-                playerConn.on('close', () => setPlayerStatus('Disconnected', 'Reconnecting...') || setTimeout(autoRejoin, 2000));
+            const base = topicBase(pin);
+            const b = parseInt(new URLSearchParams(window.location.search).get('b') || '0', 10) || 0;
+            if (playerClient) { try { playerClient.end(true); } catch (e) {} playerClient = null; }
+            clearTimeout(playerJoinTimer); clearInterval(playerJoinRetry);
+            playerJoined = false; playerLastState = null;
+
+            if (typeof mqtt === 'undefined') { showJoinError('Could not load connection library. Check your internet and reload.'); return; }
+            setPlayerStatus('Connecting...', 'Joining the game, please wait.');
+
+            const c = mqtt.connect(BROKERS[b] || BROKERS[0], {
+                clientId: 'dcp_' + teamId + '_' + Math.random().toString(16).slice(2, 6),
+                reconnectPeriod: 3000, connectTimeout: 10000, clean: true,
+                will: { topic: base + '/up', payload: JSON.stringify({ type: 'drop', teamId: teamId }), qos: 0 }
             });
-            playerPeer.on('error', e => {
-                console.warn(e);
-                showJoinError(e.type === 'peer-unavailable' ? "Game not found. Ask the host to check the PIN." : "Connection problem: " + e.type);
+            playerClient = c;
+            const sendJoin = () => mqttPub(c, base + '/up', { type: 'join', teamId: teamId, name: name });
+
+            c.on('connect', () => {
+                c.subscribe([base + '/state', base + '/to/' + teamId], { qos: 0 });
+                sendJoin();
+                clearInterval(playerJoinRetry);
+                playerJoinRetry = setInterval(() => { if (!playerJoined) sendJoin(); }, 2500);
             });
+            c.on('message', (topic, buf) => {
+                let msg; try { msg = JSON.parse(buf.toString()); } catch (e) { return; }
+                if (msg.type === 'state') {
+                    playerLastState = msg;
+                    if (playerJoined) applyPlayerState(msg);
+                } else {
+                    handlePlayerMessage(msg);
+                }
+            });
+            c.on('error', e => console.warn('MQTT player error', e));
+
+            playerJoinTimer = setTimeout(() => {
+                if (!playerJoined) {
+                    showJoinError("Couldn't reach the host. Make sure the host screen is open and scan the latest QR code, then try again.");
+                }
+            }, 15000);
         }
 
         function setPlayerStatus(t, s) {
             document.getElementById('playerStatusTitle').innerText = t;
             document.getElementById('playerStatusSubtitle').innerText = s;
         }
+
         function showJoinError(msg) {
+            clearTimeout(playerJoinTimer); clearInterval(playerJoinRetry);
+            if (playerClient) { try { playerClient.end(true); } catch (e) {} playerClient = null; }
             document.getElementById('viewPlayerWaiting').classList.add('hidden');
+            document.getElementById('viewPlayerKahootControls').classList.add('hidden');
             document.getElementById('viewPlayerJoin').classList.remove('hidden');
             alert(msg);
         }
@@ -1163,14 +1226,17 @@
         function handlePlayerMessage(msg) {
             if (msg.type === 'kicked') {
                 alert("You have been removed from the game by the host.");
-                playerLeaveGame(true); return;
-            }
-            if (msg.type === 'joined') {
+                playerLeaveGame(true);
+            } else if (msg.type === 'joined') {
+                playerJoined = true;
+                clearTimeout(playerJoinTimer); clearInterval(playerJoinRetry);
                 document.getElementById('playerActiveTeamBadge').innerText = msg.name;
                 setPlayerStatus("You're In!", "Waiting for the host to start the game...");
-                return;
+                if (playerLastState) applyPlayerState(playerLastState);
             }
-            if (msg.type !== 'state') return;
+        }
+
+        function applyPlayerState(msg) {
             if (msg.status === 'reset_game') { playerLeaveGame(true); return; }
             const kc = document.getElementById('viewPlayerKahootControls'), wt = document.getElementById('viewPlayerWaiting');
             if (msg.status === 'kahoot_q') {
@@ -1187,7 +1253,7 @@
         function autoRejoin() {
             const id = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
             const name = localStorage.getItem('diwali_player_name_' + window.gamePinStr);
-            if (id && name) connectPlayer(() => playerConn.send({ type: 'join', teamId: id, name }));
+            if (id && name) connectPlayer(id, name);
         }
 
         function playerJoinGame() {
@@ -1199,15 +1265,17 @@
             document.getElementById('viewPlayerJoin').classList.add('hidden');
             document.getElementById('viewPlayerWaiting').classList.remove('hidden');
             document.getElementById('playerActiveTeamBadge').innerText = name;
-            connectPlayer(() => playerConn.send({ type: 'join', teamId, name }));
+            connectPlayer(teamId, name);
         }
 
         function playerLeaveGame(fromHost) {
             const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
-            if (!fromHost && playerConn && playerConn.open) playerConn.send({ type: 'leave', teamId });
+            if (!fromHost && playerClient && teamId) mqttPub(playerClient, topicBase(window.gamePinStr) + '/up', { type: 'leave', teamId: teamId });
             localStorage.removeItem('diwali_my_team_id_' + window.gamePinStr);
             localStorage.removeItem('diwali_player_name_' + window.gamePinStr);
-            try { playerConn && playerConn.close(); playerPeer && playerPeer.destroy(); } catch(e){}
+            clearTimeout(playerJoinTimer); clearInterval(playerJoinRetry);
+            const old = playerClient; playerClient = null; playerJoined = false;
+            if (old) setTimeout(() => { try { old.end(true); } catch (e) {} }, 300);
             document.getElementById('viewPlayerWaiting').classList.add('hidden');
             document.getElementById('viewPlayerKahootControls').classList.add('hidden');
             document.getElementById('viewPlayerJoin').classList.remove('hidden');
@@ -1219,7 +1287,7 @@
             document.getElementById('viewPlayerWaiting').classList.remove('hidden');
             setPlayerStatus("Answer Submitted!", "Waiting for round results...");
             const teamId = localStorage.getItem('diwali_my_team_id_' + window.gamePinStr);
-            if (playerConn && playerConn.open) playerConn.send({ type: 'answer', teamId, index });
+            mqttPub(playerClient, topicBase(window.gamePinStr) + '/up', { type: 'answer', teamId: teamId, index: index });
         }
     </script>
 </body>
